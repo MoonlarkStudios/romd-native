@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../eng/versions/libchdr.props" />
+  <PropertyGroup>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <IsPackable>false</IsPackable>
+    <Description>Pinned libchdr native assets; upstream $(LibchdrUpstreamVersion), commit $(LibchdrUpstreamCommit).</Description>
+  </PropertyGroup>
+  <Target Name="RejectUnqualifiedNativePackage" BeforeTargets="Pack">
+    <Error Text="Native packages require qualified binaries, manifests, licenses and attestations for every supported RID." />
+  </Target>
+</Project>

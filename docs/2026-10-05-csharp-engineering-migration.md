@@ -46,11 +46,11 @@ failed at the G2 baseline, now reads calling conventions from modified field typ
 | --- | --- |
 | Baseline, before any change | `check.py` PASS; Python unittest 38 + 17 + 6 + 7 OK; build 0 warnings; tests 200/201 (pre-existing callback test failure) |
 | `dotnet restore --locked-mode`, `build -warnaserror` | PASS, 0 warnings |
-| `dotnet test` | PASS: Moonlark.Libchdr.Tests 204/204, Moonlark.Native.Engineering.Tests 319/319 (352/352 after the review fixes below) |
+| `dotnet test` | PASS: Moonlark.Libchdr.Tests 204/204, Moonlark.Native.Engineering.Tests 319/319 (418/418 after the review fixes and coverage below) |
 | `repo check`; with tags `libchdr-v1.0.0-preview.1`, `chdman-0.289-r1` | PASS |
 | `repo check --tag libchdr-v0.3.0` | Expected FAIL |
 | `generate --check`, real pinned tool | PASS, 19 imports. Raw output is byte-identical to the Python generator's raw output. The tracked binding diff is the import mechanism only. |
-| `native build`, then `native verify` | PASS. Dylib SHA-256 `0fbca879a40ef27a3b8e8e78c2043cb05ca96a06cf5991433f7ffdf26d91f56a`. |
+| `native build`, then `native verify` | PASS. Dylib SHA-256 `0fbca879a40ef27a3b8e8e78c2043cb05ca96a06cf5991433f7ffdf26d91f56a` before the review fixes, and `cc151e226efe94a1fb8a3d54ba731c9960fa42717c30d9c4ac6d18d0faa45627` after them. Recipe inputs include the engineering sources, so the build ID changed. |
 | Same build in another output directory and in another checkout | Byte-identical |
 | `upstream update --commit` (current pin) | PASS; no tracked file changed |
 | `chdman build --jobs 4`, 25-character output path | Binary `e47a873059df60e1e706c1189e89968427ed8a36750d3f665c45a598a477cda1`, identical to the final Python-recipe builds |
@@ -102,6 +102,23 @@ turns its tests red.
   full-solution run. It was not reproduced in 18 runs, 12 of them under full CPU
   contention. The test now requires one allocation-free steady-state window out
   of five; this hardening is unverified against the original failure.
+- **Orchestration coverage.** Previously, deleting a check in
+  `FixtureGenerator.Run`, `NativeVerify.Run` or `BinaryInspection.Inspect` failed
+  no test.
+  - 66 tests now drive these paths with fake tools on an explicit PATH and a
+    fake chdman, covering every RID's inspector.
+  - 38 of 40 mutations were killed. One was an equivalent mutant; the other was
+    a harness quoting error that was fixed and re-run, which killed the mutation.
+  - The only production change is an injectable inspection host whose default
+    is the real host and loader.
+
+Final state after the fixes:
+- build: 0 warnings;
+- tests: 204 + 418;
+- `repo check`, `generate --check`, and `native build`/`verify` in two
+  directories: byte-identical;
+- `upstream update` at the current pin: no-op;
+- fixtures: data-identical.
 
 ## Failed attempts retained
 

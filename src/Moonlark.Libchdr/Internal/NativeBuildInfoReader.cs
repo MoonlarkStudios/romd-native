@@ -5,13 +5,13 @@ namespace Moonlark.Libchdr.Internal;
 
 internal static class NativeBuildInfoReader
 {
-    internal static unsafe LibchdrBuildInfo Read(NativeLibraryHandle library)
+    internal static unsafe LibchdrBuildInfo Read(nint library)
     {
         foreach (string name in NativeBuildContract.Exports)
-            if (!NativeLibrary.TryGetExport(library.DangerousGetHandle(), name, out _))
+            if (!NativeLibrary.TryGetExport(library, name, out _))
                 throw new BadImageFormatException($"Native libchdr is missing the paired export '{name}'.");
         nint export;
-        try { export = NativeLibrary.GetExport(library.DangerousGetHandle(), "moonlark_chdr_build_info"); }
+        try { export = NativeLibrary.GetExport(library, "moonlark_chdr_build_info"); }
         catch (EntryPointNotFoundException error) { throw new BadImageFormatException("Native libchdr has no build-info export.", error); }
         byte* bytes = ((delegate* unmanaged[Cdecl]<byte*>)export)();
         if (bytes == null) throw new BadImageFormatException("Native libchdr returned null build information.");

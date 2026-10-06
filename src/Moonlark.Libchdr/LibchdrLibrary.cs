@@ -1,18 +1,21 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Moonlark.Libchdr.Internal;
+using Moonlark.Libchdr.Interop;
 
 namespace Moonlark.Libchdr;
 
 /// <summary>Loads and validates one process-resident native libchdr build.</summary>
 /// <remarks>Native libraries are trusted executable code. Verify external binaries before loading.
-/// The library remains resident for the lifetime of this assembly and cannot be replaced or unloaded.</remarks>
+/// A verified library is never freed: it stays resident for the life of the process and cannot be replaced or unloaded.
+/// This package owns its assembly's DllImport resolver, through which every native call binds to the verified build:
+/// do not register another resolver for it, and do not bind <c>moonlark_chdr</c> with NativeAOT <c>DirectPInvoke</c>,
+/// which bypasses the resolver and its verification.</remarks>
 public static class LibchdrLibrary
 {
     private static readonly object Gate = new();
     private static ResidentLibrary? _resident;
-
-    static LibchdrLibrary() => NativeLibrary.SetDllImportResolver(typeof(LibchdrLibrary).Assembly, ResolveImport);
 
     /// <summary>The validated identity, loading the packaged native asset on first use.</summary>
     public static LibchdrBuildInfo BuildInfo => EnsureLoaded().Info;
@@ -43,7 +46,27 @@ public static class LibchdrLibrary
         }
     }
 
-    internal static void EnsureInitialized() => _ = EnsureLoaded();
+    /// <summary>Registers the resolver, by running the NativeMethods type initializer, before loading the verified build;
+    /// registration then never depends on when the runtime binds an import.</summary>
+    internal static void EnsureInitialized()
+    {
+        RuntimeHelpers.RunClassConstructor(typeof(NativeMethods).TypeHandle);
+        _ = EnsureLoaded();
+    }
+
+    /// <summary>Routes every raw import through the verified load; the NativeMethods type initializer calls this once.</summary>
+    /// <exception cref="InvalidOperationException">The host already registered a resolver for this assembly.</exception>
+    internal static void RegisterResolver()
+    {
+        try { NativeLibrary.SetDllImportResolver(typeof(LibchdrLibrary).Assembly, ResolveImport); }
+        catch (InvalidOperationException error)
+        {
+            throw new InvalidOperationException(
+                "Moonlark.Libchdr owns the DllImport resolver of its assembly, which binds native calls only to the verified " +
+                "libchdr build, but another resolver is already registered for it. Native calls stay unavailable in this process; " +
+                "remove the host's resolver, and supply a build with LibchdrLibrary.Load instead.", error);
+        }
+    }
 
     private static ResidentLibrary EnsureLoaded()
     {
@@ -66,13 +89,13 @@ public static class LibchdrLibrary
 
     private static ResidentLibrary OpenLibrary(string path)
     {
-        var handle = new NativeLibraryHandle(NativeLibrary.Load(path));
+        nint handle = NativeLibrary.Load(path);
         try { return new(handle, NativeBuildInfoReader.Read(handle), path); }
-        catch { handle.Dispose(); throw; }
+        catch { NativeLibrary.Free(handle); throw; }
     }
 
     private static nint ResolveImport(string name, Assembly assembly, DllImportSearchPath? searchPath) =>
-        name == "moonlark_chdr" ? EnsureLoaded().Handle.DangerousGetHandle() : 0;
+        name == "moonlark_chdr" ? EnsureLoaded().Handle : 0;
 
-    private sealed record ResidentLibrary(NativeLibraryHandle Handle, LibchdrBuildInfo Info, string Path);
+    private sealed record ResidentLibrary(nint Handle, LibchdrBuildInfo Info, string Path);
 }

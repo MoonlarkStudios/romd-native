@@ -8,7 +8,11 @@ namespace Moonlark.Native.Engineering.Native;
 internal static class NativeVerify
 {
     /// <summary>Returns the verified binary path.</summary>
-    internal static Result<string> Run(string root, string manifestPath, string source, IReadOnlyDictionary<string, string> environment, TextWriter? log)
+    internal static Result<string> Run(string root, string manifestPath, string source, IReadOnlyDictionary<string, string> environment, TextWriter? log) =>
+        Run(root, manifestPath, source, environment, log, InspectionHost.Native);
+
+    internal static Result<string> Run(string root, string manifestPath, string source, IReadOnlyDictionary<string, string> environment, TextWriter? log,
+        InspectionHost inspectionHost)
     {
         Result<JsonObject> manifest = JsonFields.ReadObject(manifestPath, "Manifest");
         if (!manifest.Succeeded) return manifest.Failure;
@@ -29,7 +33,7 @@ internal static class NativeVerify
         if (!exports.Succeeded) return exports.Failure;
         Result<IReadOnlyDictionary<string, string>> tools = BuildEnvironment.Create(environment);
         if (!tools.Succeeded) return tools.Failure;
-        Result<Inspection> inspection = BinaryInspection.Inspect(binary, rid.Value, exports.Value, (JsonObject)manifest.Value["buildInfo"]!, tools.Value, log);
+        Result<Inspection> inspection = BinaryInspection.Inspect(binary, rid.Value, exports.Value, (JsonObject)manifest.Value["buildInfo"]!, tools.Value, log, inspectionHost);
         if (!inspection.Succeeded) return inspection.Failure;
         foreach ((string name, JsonNode actual) in Recorded(inspection.Value))
             if (Check.That(JsonFields.SameCanonical(actual, manifest.Value[name]), $"Actual binary {name} differs from manifest") is { } differs) return differs;

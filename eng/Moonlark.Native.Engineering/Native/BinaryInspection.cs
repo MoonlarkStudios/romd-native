@@ -10,13 +10,23 @@ internal sealed record PlatformFacts(ImmutableArray<string> Symbols, ImmutableAr
 /// <summary>Validated inspection result recorded in, and later compared with, the manifest.</summary>
 internal sealed record Inspection(ImmutableArray<string> Symbols, ImmutableArray<string> Dependencies, JsonObject Platform);
 
+/// <summary>The host RID and in-process build-info reader inspection depends on; tests substitute both to drive every RID's inspector.</summary>
+internal sealed record InspectionHost(Func<Result<string>> Rid, Func<string, Result<JsonObject>> ReadBuildInfo)
+{
+    internal static InspectionHost Native { get; } = new(NativeRids.Host, NativeBuildInfo.ReadFromLibrary);
+}
+
 /// <summary>Inspects an actual binary on its native host: architecture, exports, dependencies, platform floor and build-info.</summary>
 internal static class BinaryInspection
 {
     internal static Result<Inspection> Inspect(string binary, string rid, IReadOnlyList<string> exports, JsonObject expectedInfo,
-        IReadOnlyDictionary<string, string> environment, TextWriter? log)
+        IReadOnlyDictionary<string, string> environment, TextWriter? log) =>
+        Inspect(binary, rid, exports, expectedInfo, environment, log, InspectionHost.Native);
+
+    internal static Result<Inspection> Inspect(string binary, string rid, IReadOnlyList<string> exports, JsonObject expectedInfo,
+        IReadOnlyDictionary<string, string> environment, TextWriter? log, InspectionHost inspectionHost)
     {
-        Result<string> host = NativeRids.Host();
+        Result<string> host = inspectionHost.Rid();
         if (!host.Succeeded) return host.Failure;
         if (Check.That(rid == host.Value, "Binary inspection requires its native host; no cross-platform qualification") is { } cross) return cross;
         if (Check.That(File.Exists(binary) && !ArtifactsPath.IsLink(binary), "Native binary must be a regular file") is { } regular) return regular;
@@ -27,7 +37,7 @@ internal static class BinaryInspection
         if (!symbols.Succeeded) return symbols.Failure;
         Result<ImmutableArray<string>> dependencies = NativeAllowlists.ValidateDependencies(facts.Value.Dependencies, rid);
         if (!dependencies.Succeeded) return dependencies.Failure;
-        Result<JsonObject> actual = NativeBuildInfo.ReadFromLibrary(binary);
+        Result<JsonObject> actual = inspectionHost.ReadBuildInfo(binary);
         if (!actual.Succeeded) return actual.Failure;
         if (Check.That(JsonFields.SameCanonical(actual.Value, expectedInfo), "Native build-info differs from the pinned build recipe") is { } info) return info;
         log?.Write("Native build-info: " + JsonFields.Compact(actual.Value) + "\n");

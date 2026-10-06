@@ -18,7 +18,9 @@ internal static class ProcessRunner
     {
         log?.Write("$ " + Display(command) + "\n");
         log?.Flush();
-        var start = new ProcessStartInfo(command[0])
+        if (ResolveExecutable(command[0], environment) is not { } executable)
+            return Missing(command[0], "not found on the explicit PATH", log);
+        var start = new ProcessStartInfo(executable)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -36,10 +38,7 @@ internal static class ProcessRunner
         catch (Win32Exception exception)
         {
             // A missing tool is an environment failure, reported like a failed command rather than a crash.
-            var missing = new ProcessOutput(-1, "", $"Could not start {command[0]}: {exception.Message}", false);
-            log?.Write(missing.Combined + "\nexit=-1\n");
-            log?.Flush();
-            return missing;
+            return Missing(command[0], exception.Message, log);
         }
         using Process process = started ?? throw new IOException("Could not start " + command[0]);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync();
@@ -51,6 +50,37 @@ internal static class ProcessRunner
         log?.Write(output.Combined + (exited ? "" : "\ntimeout") + "\nexit=" + output.ExitCode.ToString(CultureInfo.InvariantCulture) + "\n");
         log?.Flush();
         return output;
+    }
+
+    /// <summary>
+    /// Resolves a bare tool name only against absolute entries of the explicit environment's PATH, never the
+    /// application or current directory, which .NET would otherwise search first. Names with a directory are used as given.
+    /// </summary>
+    internal static string? ResolveExecutable(string name, IReadOnlyDictionary<string, string> environment)
+    {
+        if (name.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) || name.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            return name;
+        string search = environment.FirstOrDefault(pair => string.Equals(pair.Key, "PATH", StringComparison.OrdinalIgnoreCase)).Value ?? "";
+        string[] extensions = OperatingSystem.IsWindows() && Path.GetExtension(name).Length == 0
+            ? (environment.FirstOrDefault(pair => string.Equals(pair.Key, "PATHEXT", StringComparison.OrdinalIgnoreCase)).Value ?? ".COM;.EXE;.BAT;.CMD")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            : [""];
+        return search.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Where(Path.IsPathFullyQualified)
+            .SelectMany(directory => extensions.Select(extension => Path.Combine(directory, name + extension)))
+            .FirstOrDefault(IsExecutableFile);
+    }
+
+    private static bool IsExecutableFile(string path) =>
+        File.Exists(path) && (OperatingSystem.IsWindows()
+            || (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0);
+
+    private static ProcessOutput Missing(string name, string reason, TextWriter? log)
+    {
+        var missing = new ProcessOutput(-1, "", $"Could not start {name}: {reason}", false);
+        log?.Write(missing.Combined + "\nexit=-1\n");
+        log?.Flush();
+        return missing;
     }
 
     /// <summary>Runs a command that must succeed and returns its trimmed combined output.</summary>

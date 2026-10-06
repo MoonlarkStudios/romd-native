@@ -172,6 +172,61 @@ public sealed class CoreChecksTests
         Assert.Contains("exit=-1", log.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>A tool planted in the current directory is never executed; bare names come only from absolute PATH entries.</summary>
+    [Fact]
+    public void BareToolNamesIgnoreTheCurrentDirectoryAndRelativePathEntries()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        string name = "moonlark-planted-" + Guid.NewGuid().ToString("N");
+        string planted = Path.Combine(Directory.GetCurrentDirectory(), name);
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            File.WriteAllText(planted, "#!/bin/sh\necho planted\n");
+            File.SetUnixFileMode(planted, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var relative = new Dictionary<string, string>(StringComparer.Ordinal) { ["PATH"] = ".:" + Path.GetFileName(Directory.GetCurrentDirectory()) };
+            Assert.Contains("not found on the explicit PATH", ProcessRunner.Run([name], relative).Failure.Message, StringComparison.Ordinal);
+            Assert.Contains("not found on the explicit PATH", ProcessRunner.Run([name], TestRepository.CleanEnvironment).Failure.Message, StringComparison.Ordinal);
+            string reviewed = Path.Combine(directory.Path, name);
+            File.Copy(planted, reviewed);
+            File.SetUnixFileMode(reviewed, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            var absolute = new Dictionary<string, string>(StringComparer.Ordinal) { ["PATH"] = directory.Path };
+            Assert.Null(ProcessRunner.ResolveExecutable(name, absolute));
+            File.SetUnixFileMode(reviewed, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Assert.Equal(reviewed, ProcessRunner.ResolveExecutable(name, absolute));
+            Assert.Equal("./explicit/tool", ProcessRunner.ResolveExecutable("./explicit/tool", absolute));
+        }
+        finally
+        {
+            File.Delete(planted);
+        }
+    }
+
+    /// <summary>A FIFO at the default log path is refused instead of blocking the build on open.</summary>
+    [Fact]
+    public void DefaultLogCannotBeAFifo()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var directory = new TemporaryDirectory();
+        string fifo = Path.Combine(directory.Path, "build.log");
+        _ = ProcessRunner.Run(["mkfifo", fifo], TestRepository.CleanEnvironment).Value;
+        Assert.Contains("regular file", ArtifactsPath.ValidateLogFile(fifo)!.Message, StringComparison.Ordinal);
+        string regular = Path.Combine(directory.Path, "existing.log");
+        File.WriteAllText(regular, "previous attempt\n");
+        Assert.Null(ArtifactsPath.ValidateLogFile(regular));
+    }
+
+    /// <summary>A case variant of the artifacts directory is outside it, as Python's case-sensitive containment was.</summary>
+    [Fact]
+    public void CaseVariantOfArtifactsIsOutside()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var directory = new TemporaryDirectory();
+        Assert.Contains("Local outputs must remain", ArtifactsPath.ValidateDirectory(Path.Combine(directory.Path, "ARTIFACTS", "x"), directory.Path).Failure.Message, StringComparison.Ordinal);
+        Assert.False(ArtifactsPath.IsWithin(Path.Combine(directory.Path, "Artifacts"), Path.Combine(directory.Path, "artifacts")));
+        Assert.True(ArtifactsPath.IsWithin(Path.Combine(directory.Path, "artifacts", "x", "..", "y"), Path.Combine(directory.Path, "artifacts")));
+    }
+
     /// <summary>Nonzero exits fail with the command and output; timeouts kill the process.</summary>
     [Fact]
     public void FailedAndTimedOutCommandsAreFailures()

@@ -89,7 +89,8 @@ internal static class FixtureGenerator
         Result<string> validated = ArtifactsPath.ValidateDirectory(output, root);
         if (!validated.Succeeded) return validated.Failure;
         string fixtures = ArtifactsPath.Resolve(Path.Combine(root, "artifacts", "fixtures"));
-        if (Check.That(ArtifactsPath.IsWithin(validated.Value, fixtures) && Path.GetRelativePath(fixtures, validated.Value) != ".",
+        if (Check.That(ArtifactsPath.IsWithin(validated.Value, fixtures)
+            && !string.Equals(Path.TrimEndingDirectorySeparator(validated.Value), Path.TrimEndingDirectorySeparator(fixtures), StringComparison.Ordinal),
             "Output must be a fixtures subdirectory") is { } outside) return outside;
         return validated.Value;
     }

@@ -7,7 +7,8 @@ namespace Moonlark.Libchdr;
 
 /// <summary>A synchronous, read-only CHD decoder with owned native lifetime.</summary>
 /// <remarks>Instances and their streams/views are not thread-safe. Use independent handles
-/// for concurrent decodes. Untrusted containers require a separate resource-limited process.</remarks>
+/// for concurrent decodes. Untrusted containers require a separate resource-limited process.
+/// Opening validates the codecs and the whole hunk map, so the source's bytes must not change while the file is open.</remarks>
 public sealed unsafe class ChdFile : IDisposable
 {
     private readonly ChdSafeHandle _handle;
@@ -71,7 +72,10 @@ public sealed unsafe class ChdFile : IDisposable
             context.ThrowIfFaulted();
             if (error != ChdError.None) throw new ChdValidationException(error, "open source");
             handle = new(file, context);
-            ChdHeader header = ChdHeaderReader.Snapshot(NativeMethods.chd_get_header(file));
+            chd_header* native = NativeMethods.chd_get_header(file);
+            ChdHeader header = ChdHeaderReader.Snapshot(native);
+            ChdMapValidator.Validate(native, context);
+            context.ThrowIfFaulted();
             ulong requested = options?.ReadAheadBytes ?? 0;
             error = (ChdError)NativeMethods.chd_set_cache_budget(file, checked((nuint)requested));
             context.ThrowIfFaulted();

@@ -48,15 +48,22 @@ public readonly record struct ChdHeader
     /// <summary>The stored overall SHA-1, including checksummed metadata for versions four and five.</summary>
     public ChdSha1 OverallSha1 { get; }
 
-    /// <summary>The stored parent SHA-1, or the zero value when absent.</summary>
+    /// <summary>The stored parent SHA-1, or the zero value when absent. A v1–v4 hash counts only with the parent flag set,
+    /// as MAME reads it.</summary>
+    /// <remarks>A file with a parent cannot open (see <see cref="HasParent"/>), so on an open <see cref="ChdFile"/> this is
+    /// always the zero value.</remarks>
     public ChdSha1 ParentSha1 { get; }
 
     /// <summary>Whether the header requires a parent, including legacy parent flags.</summary>
+    /// <remarks>No parent can be supplied, so a file that requires one fails to open, normally with
+    /// <see cref="ChdError.RequiresParent"/> (InvalidData when a v1–v4 parent flag names no parent hash); on an open
+    /// <see cref="ChdFile"/> this is always false.</remarks>
     public bool HasParent { get; }
 
     /// <summary>Returns a codec slot without allocating a collection.</summary>
     /// <param name="slot">The zero-based slot, from zero through three.</param>
-    /// <returns>The native codec value. Unknown numeric values are preserved.</returns>
+    /// <returns>The slot's codec: the stored FourCC for v5, or the v5 equivalent of a v1–v4 legacy value. Unknown
+    /// numeric values are preserved.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The slot is outside zero through three.</exception>
     public ChdCodec GetCodec(int slot) => slot switch
     {

@@ -49,10 +49,18 @@ internal static class ChdHeaderReader
             throw new ChdValidationException(ChdError.InvalidData, "read header geometry");
         ChdSha1 overall = ChdSha1.FromBytes(new ReadOnlySpan<byte>(&value->sha1.e0, 20));
         ChdSha1 raw = value->version == 3 ? overall : ChdSha1.FromBytes(new ReadOnlySpan<byte>(&value->rawsha1.e0, 20));
-        ChdSha1 parent = ChdSha1.FromBytes(new ReadOnlySpan<byte>(&value->parentsha1.e0, 20));
+        bool legacy = value->version < 5;
+        bool legacyParent = (value->flags & 1) != 0;
+        // MAME reads a v1–v4 parent hash only when the parent flag is set; libchdr copies the bytes regardless.
+        ChdSha1 parent = legacy && !legacyParent ? default : ChdSha1.FromBytes(new ReadOnlySpan<byte>(&value->parentsha1.e0, 20));
+        ChdCodec first = legacy ? LegacyCodec(value->compression[0]) : (ChdCodec)value->compression[0];
         return new(value->version, value->logicalbytes, value->hunkbytes, value->unitbytes, count,
-            (ChdCodec)value->compression[0], (ChdCodec)value->compression[1],
+            first, (ChdCodec)value->compression[1],
             (ChdCodec)value->compression[2], (ChdCodec)value->compression[3], raw, overall, parent,
-            value->version < 5 ? (value->flags & 1) != 0 : !parent.IsEmpty);
+            legacy ? legacyParent : !parent.IsEmpty);
     }
+
+    /// <summary>Maps the v1–v4 zlib and zlib+ values to Zlib, as MAME's chd_file does; 0 is already None, and map
+    /// validation rejects every other legacy value before a file opens.</summary>
+    private static ChdCodec LegacyCodec(uint value) => value is 1 or 2 ? ChdCodec.Zlib : (ChdCodec)value;
 }

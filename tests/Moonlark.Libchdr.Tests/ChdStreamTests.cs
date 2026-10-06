@@ -31,7 +31,7 @@ public sealed class ChdStreamTests
         Assert.Throws<ArgumentOutOfRangeException>(() => stream.Seek(0, (SeekOrigin)7));
     }
 
-    /// <summary>Qualifies explicit Ownership And All Overridden Operations Respect Disposal.</summary>
+    /// <summary>Qualifies explicit ownership; operations throw after disposal while capabilities report false, as the Stream contract requires.</summary>
     [Fact]
     public async Task ExplicitOwnershipAndAllOverriddenOperationsRespectDisposal()
     {
@@ -39,10 +39,15 @@ public sealed class ChdStreamTests
         var kept = new ChdStream(file, true);
         kept.Dispose();
         _ = file.Header;
-        Assert.Throws<ObjectDisposedException>(() => kept.CanRead);
-        Assert.Throws<ObjectDisposedException>(() => kept.CanSeek);
-        Assert.Throws<ObjectDisposedException>(() => kept.CanWrite);
-        Assert.Throws<ObjectDisposedException>(() => kept.CanTimeout);
+        Assert.False(kept.CanRead);
+        Assert.False(kept.CanSeek);
+        Assert.False(kept.CanWrite);
+        Assert.False(kept.CanTimeout);
+        Assert.Throws<ObjectDisposedException>(() => { _ = kept.FlushAsync(); });
+        Assert.True(kept.FlushAsync(new CancellationToken(canceled: true)).IsCanceled);
+        Assert.Throws<ObjectDisposedException>(() => kept.ReadByte());
+        Assert.Throws<ObjectDisposedException>(() => kept.Read(new byte[1].AsSpan()));
+        Assert.Throws<ObjectDisposedException>(() => kept.CopyTo(Stream.Null));
         Assert.Throws<ObjectDisposedException>(() => kept.Position);
         Assert.Throws<ObjectDisposedException>(() => kept.Length);
         Assert.Throws<ObjectDisposedException>(() => kept.Flush());
@@ -70,5 +75,42 @@ public sealed class ChdStreamTests
         await Assert.ThrowsAsync<NotSupportedException>(() => stream.CopyToAsync(Stream.Null));
         Assert.Throws<NotSupportedException>(() => stream.Write([]));
         Assert.Throws<NotSupportedException>(() => stream.SetLength(0));
+    }
+
+    /// <summary>Flushing a read-only stream does nothing, so FlushAsync completes synchronously like Flush, honoring cancellation.</summary>
+    [Fact]
+    public async Task FlushAsyncIsTheCompletedNoOpOfFlush()
+    {
+        using ChdFile file = NativeTestEnvironment.OpenFixture();
+        using Stream stream = new ChdStream(file, true);
+        Task flush = stream.FlushAsync();
+        Assert.True(flush.IsCompletedSuccessfully);
+        await flush;
+        Assert.True(stream.FlushAsync(new CancellationToken(canceled: true)).IsCanceled);
+    }
+
+    /// <summary>Capabilities also report false once the decoder is disposed under a stream that left it open.</summary>
+    [Fact]
+    public void CapabilitiesReportFalseOnceTheDecoderIsDisposed()
+    {
+        ChdFile file = NativeTestEnvironment.OpenFixture();
+        using var stream = new ChdStream(file, leaveOpen: true);
+        Assert.True(stream.CanRead);
+        file.Dispose();
+        Assert.False(stream.CanRead);
+        Assert.False(stream.CanSeek);
+        Assert.Throws<ObjectDisposedException>(() => stream.ReadByte());
+    }
+
+    /// <summary>Timeouts are unsupported in the way every BCL stream reports them, with InvalidOperationException.</summary>
+    [Fact]
+    public void TimeoutsThrowInvalidOperationAsBclStreamsDo()
+    {
+        using ChdFile file = NativeTestEnvironment.OpenFixture();
+        using var stream = new ChdStream(file, true);
+        Assert.Throws<InvalidOperationException>(() => stream.ReadTimeout);
+        Assert.Throws<InvalidOperationException>(() => stream.ReadTimeout = 1);
+        Assert.Throws<InvalidOperationException>(() => stream.WriteTimeout);
+        Assert.Throws<InvalidOperationException>(() => stream.WriteTimeout = 1);
     }
 }

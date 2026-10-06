@@ -1,6 +1,8 @@
 namespace Moonlark.Libchdr;
 
-/// <summary>A codec identifier in a version 5 CHD header.</summary>
+/// <summary>A CHD codec identifier: the FourCC a version 5 header stores. A v1–v4 header's zlib and zlib+
+/// compression values are reported as Zlib, as MAME maps them. Files using the A/V codec in either version do not
+/// open: libchdr's A/V decoder can report success with a hunk partly unwritten.</summary>
 public enum ChdCodec : uint
 {
     /// <summary>No compression codec.</summary>

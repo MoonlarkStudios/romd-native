@@ -2,7 +2,9 @@ namespace Moonlark.Libchdr;
 
 /// <summary>A read-only seekable synchronous stream over a CHD's logical bytes.</summary>
 /// <remarks>The stream and decoder share a hunk cache and are not thread-safe.
-/// Native I/O is synchronous; asynchronous read methods are unsupported.</remarks>
+/// Native I/O is synchronous, and the asynchronous read methods throw <see cref="NotSupportedException"/> even
+/// though <see cref="CanRead"/> is true, so asynchronous consumers such as <c>CopyToAsync</c> or
+/// <c>StreamReader.ReadToEndAsync</c> fail. Use the synchronous methods, on a worker thread if needed.</remarks>
 public sealed class ChdStream : Stream
 {
     private readonly ChdFile _file;
@@ -25,12 +27,12 @@ public sealed class ChdStream : Stream
         _leaveOpen = leaveOpen;
     }
 
-    /// <inheritdoc/>
-    public override bool CanRead { get { ThrowIfDisposed(); return true; } }
-    /// <inheritdoc/>
-    public override bool CanSeek { get { ThrowIfDisposed(); return true; } }
-    /// <inheritdoc/>
-    public override bool CanWrite { get { ThrowIfDisposed(); return false; } }
+    /// <summary>True until this stream or its decoder is disposed, as the Stream contract requires.</summary>
+    public override bool CanRead => !_disposed && !_file.IsDisposed;
+    /// <summary>True until this stream or its decoder is disposed, as the Stream contract requires.</summary>
+    public override bool CanSeek => !_disposed && !_file.IsDisposed;
+    /// <summary>Always false; CHD streams are read-only.</summary>
+    public override bool CanWrite => false;
     /// <inheritdoc/>
     public override long Length { get { ThrowIfDisposed(); return checked((long)_file.Header.LogicalBytes); } }
     /// <inheritdoc/>
@@ -91,12 +93,12 @@ public sealed class ChdStream : Stream
     public override void Write(byte[] buffer, int offset, int count) { ThrowIfDisposed(); throw new NotSupportedException("CHD streams are read-only."); }
     /// <inheritdoc/>
     public override void Write(ReadOnlySpan<byte> buffer) { ThrowIfDisposed(); throw new NotSupportedException("CHD streams are read-only."); }
-    /// <inheritdoc/>
-    public override int ReadTimeout { get { ThrowIfDisposed(); throw new NotSupportedException("CHD streams do not support timeouts."); } set { ThrowIfDisposed(); throw new NotSupportedException("CHD streams do not support timeouts."); } }
-    /// <inheritdoc/>
-    public override int WriteTimeout { get { ThrowIfDisposed(); throw new NotSupportedException("CHD streams do not support timeouts."); } set { ThrowIfDisposed(); throw new NotSupportedException("CHD streams do not support timeouts."); } }
-    /// <inheritdoc/>
-    public override bool CanTimeout { get { ThrowIfDisposed(); return false; } }
+    /// <summary>Unsupported; throws <see cref="InvalidOperationException"/>, as BCL streams without timeouts do.</summary>
+    public override int ReadTimeout { get { ThrowIfDisposed(); throw NoTimeouts(); } set { ThrowIfDisposed(); throw NoTimeouts(); } }
+    /// <summary>Unsupported; throws <see cref="InvalidOperationException"/>, as BCL streams without timeouts do.</summary>
+    public override int WriteTimeout { get { ThrowIfDisposed(); throw NoTimeouts(); } set { ThrowIfDisposed(); throw NoTimeouts(); } }
+    /// <summary>Always false; CHD streams have no timeouts.</summary>
+    public override bool CanTimeout => false;
 
     /// <inheritdoc/>
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -105,9 +107,16 @@ public sealed class ChdStream : Stream
     public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
     { ThrowIfDisposed(); throw new NotSupportedException("CHD native reads are synchronous; use Read."); }
 
-    /// <inheritdoc/>
+    /// <summary>Completes immediately, as <see cref="Flush"/> does nothing for a read-only stream; no work is queued.</summary>
+    /// <param name="cancellationToken">A token whose cancellation yields a canceled task.</param>
+    /// <returns>A completed or canceled task.</returns>
     public override Task FlushAsync(CancellationToken cancellationToken)
-    { ThrowIfDisposed(); throw new NotSupportedException("CHD streams are synchronous; use Flush."); }
+    {
+        // Cancellation wins over disposal, as FileStream, BufferedStream and MemoryStream report it.
+        if (cancellationToken.IsCancellationRequested) return Task.FromCanceled(cancellationToken);
+        ThrowIfDisposed();
+        return Task.CompletedTask;
+    }
     /// <inheritdoc/>
     public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
     { ThrowIfDisposed(); throw new NotSupportedException("CHD native reads are synchronous; use CopyTo."); }
@@ -140,4 +149,5 @@ public sealed class ChdStream : Stream
     }
 
     private void ThrowIfDisposed() { ObjectDisposedException.ThrowIf(_disposed, this); _file.ThrowIfDisposed(); }
+    private static InvalidOperationException NoTimeouts() => new("CHD streams do not support timeouts.");
 }

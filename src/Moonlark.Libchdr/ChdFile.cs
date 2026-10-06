@@ -258,7 +258,8 @@ public sealed unsafe class ChdFile : IDisposable
         if ((uint)index >= (uint)_metadata.Length) throw new InvalidOperationException("Metadata enumeration is outside a current entry.");
         return _metadata[index].Info;
     }
-    internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+    internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+    internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     /// <inheritdoc cref="Open(string, ChdOpenOptions)"/>
     public static ChdFile Open(string path) => Open(path, null);

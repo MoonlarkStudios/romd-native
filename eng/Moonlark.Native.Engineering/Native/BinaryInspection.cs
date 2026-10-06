@@ -56,6 +56,9 @@ internal static class BinaryInspection
         if (!dependencies.Succeeded) return dependencies.Failure;
         Result<string> minimum = run(["otool", "-l", binary]).Then(ToolOutput.MacOsMinimum);
         if (!minimum.Succeeded) return minimum.Failure;
+        // A modified page would otherwise kill this process when the build-info export is read in-process.
+        if (Check.That(run(["codesign", "--verify", "--strict", binary]).Succeeded,
+            "Mach-O code signature is invalid; refusing to load the binary") is { } signature) return signature;
         return new PlatformFacts(symbols.Value, dependencies.Value, new JsonObject { ["architecture"] = "arm64", ["minimumOs"] = minimum.Value });
     }
 

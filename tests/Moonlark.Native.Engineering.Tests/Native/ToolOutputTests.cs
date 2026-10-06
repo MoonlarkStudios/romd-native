@@ -86,12 +86,28 @@ public sealed class ToolOutputTests
         Assert.False(ToolOutput.ParseMachODependencies(linked.Replace("@loader_path", "@rpath", StringComparison.Ordinal), "libmoonlark_chdr.dylib").Succeeded);
     }
 
-    /// <summary>Canned macOS output: a universal binary is rejected.</summary>
+    /// <summary>Canned macOS output parses exports, dependencies and minos; a universal binary or an invalid signature fails.</summary>
     [Fact]
-    public void MacOsInspectorRequiresSingleArm64Slice()
+    public void MacOsInspectorParsesCannedToolsAndFailsClosed()
     {
-        Dictionary<string, string> tools = new(StringComparer.Ordinal) { ["lipo"] = "x86_64 arm64" };
-        Assert.Contains("architecture", BinaryInspection.Platform("osx-arm64", "/x/libmoonlark_chdr.dylib", Canned(tools)).Failure.Message, StringComparison.Ordinal);
+        const string binary = "/x/libmoonlark_chdr.dylib";
+        Dictionary<string, string> tools = new(StringComparer.Ordinal)
+        {
+            ["lipo -archs"] = "arm64",
+            ["nm -gU"] = "0000000000001000 T _chd_close\n0000000000001010 T _chd_read\n0000000000001020 T _moonlark_chdr_build_info",
+            ["otool -L"] = binary + ":\n\t@loader_path/libmoonlark_chdr.dylib (compatibility version 0.0.0, current version 0.0.0)\n" +
+                "\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)",
+            ["otool -l"] = "Load command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 14.0\n      sdk 27.0\n",
+            ["codesign --verify"] = "",
+        };
+        PlatformFacts facts = BinaryInspection.Platform("osx-arm64", binary, Canned(tools)).Value;
+        Assert.Equal(Exports, facts.Symbols);
+        Assert.Equal<string>(["/usr/lib/libSystem.B.dylib"], facts.Dependencies);
+        Assert.Equal("14.0", (string)facts.Platform["minimumOs"]!);
+        tools.Remove("codesign --verify");
+        Assert.Contains("code signature", BinaryInspection.Platform("osx-arm64", binary, Canned(tools)).Failure.Message, StringComparison.Ordinal);
+        tools["lipo -archs"] = "x86_64 arm64";
+        Assert.Contains("architecture", BinaryInspection.Platform("osx-arm64", binary, Canned(tools)).Failure.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Canned Linux output parses architecture, exports, needed libraries and the GLIBC maximum.</summary>

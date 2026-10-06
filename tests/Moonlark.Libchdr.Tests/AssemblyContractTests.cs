@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Xunit;
 
 namespace Moonlark.Libchdr.Tests;
@@ -20,15 +21,29 @@ public sealed class AssemblyContractTests
     public void RuntimeMarshallingIsDisabled() =>
         Assert.NotNull(Library.GetCustomAttribute<DisableRuntimeMarshallingAttribute>());
 
-    /// <summary>Version metadata must identify the actual untagged upstream pin.</summary>
+    /// <summary>Version metadata must identify the actual untagged upstream pin recorded in eng/pins/libchdr.json.</summary>
     [Fact]
     public void UpstreamIdentityIsExplicit()
     {
+        using JsonDocument pin = JsonDocument.Parse(File.ReadAllText(PinPath()));
+        string commit = pin.RootElement.GetProperty("commit").GetString() ?? "";
         var metadata = Library.GetCustomAttributes<AssemblyMetadataAttribute>()
             .ToDictionary(attribute => attribute.Key, attribute => attribute.Value, StringComparer.Ordinal);
-        Assert.Equal("607694ca0812edfc9cc2030c64634fc2393668de", metadata["UpstreamCommit"]);
-        Assert.Equal("v0.3.0-116-g607694c", metadata["UpstreamVersion"]);
+        Assert.Matches("^[0-9a-f]{40}$", commit);
+        Assert.Equal(commit, metadata["UpstreamCommit"]);
+        Assert.Equal(pin.RootElement.GetProperty("upstreamVersion").GetString(), metadata["UpstreamVersion"]);
         Assert.Equal("Family", metadata["NativeVersionMode"]);
         Assert.Equal(new Version(1, 0, 0, 0), Library.GetName().Version);
+    }
+
+    /// <summary>Walks up from the test binaries; NativeTestEnvironment is avoided because it loads the native library.</summary>
+    private static string PinPath()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, "eng", "pins", "libchdr.json");
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new DirectoryNotFoundException("Assembly contract tests require the source checkout's eng/pins/libchdr.json.");
     }
 }

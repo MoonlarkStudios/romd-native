@@ -58,9 +58,16 @@ public sealed class ChdDataSourceTests
             using var source = new FileChdDataSource(path);
             Span<byte> buffer = stackalloc byte[32];
             for (int index = 0; index < 100; index++) source.Read(0, buffer);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int index = 0; index < 1_000; index++) source.Read(0, buffer);
-            Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+            // One-time runtime transitions (such as tiering under load) may allocate once; a steady-state
+            // allocation recurs in every window, so at least one window must allocate nothing.
+            bool steady = false;
+            for (int window = 0; window < 5 && !steady; window++)
+            {
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                for (int index = 0; index < 1_000; index++) source.Read(0, buffer);
+                steady = GC.GetAllocatedBytesForCurrentThread() == before;
+            }
+            Assert.True(steady, "File reads allocated in every steady-state window.");
         }
         finally { File.Delete(path); }
     }

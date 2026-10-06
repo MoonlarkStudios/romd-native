@@ -136,7 +136,8 @@ public sealed class UpstreamUpdateTests
         Assert.Equal<string>(["/existing/sdk/dotnet"], sdks);
         string printed = output.ToString();
         Assert.Contains($"git -C native/libchdr/upstream log --oneline {fixture.FirstCommit}..{fixture.SecondCommit}", printed, StringComparison.Ordinal);
-        Assert.Contains("exports.map, exports.osx and exports.def", printed, StringComparison.Ordinal);
+        Assert.Contains("The export list changed: native build regenerates the platform export files", printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("exports.map", printed, StringComparison.Ordinal);
         Assert.Contains("CHANGELOG.md", printed, StringComparison.Ordinal);
         Assert.Contains("PASS: pin, props, exports.txt, bindings and contract regenerated for " + fixture.SecondVersion, printed, StringComparison.Ordinal);
     }

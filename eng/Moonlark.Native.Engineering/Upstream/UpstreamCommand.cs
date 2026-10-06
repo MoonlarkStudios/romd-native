@@ -40,11 +40,11 @@ internal static class UpstreamCommand
         "Review the derived diff: git diff -- " + string.Join(' ', UpstreamUpdate.TrackedPaths),
         "Update the handwritten safe API in src/Moonlark.Libchdr if the bindings changed.",
         .. update.ExportsChanged
-            ? (string[])["The export list changed: update native/libchdr/exports.map, exports.osx and exports.def to match exports.txt."]
+            ? (string[])["The export list changed: native build regenerates the platform export files from exports.txt; review each added or removed function."]
             : [],
         "Add the CHANGELOG.md entry with the reviewed upstream diff, including bundled codec changes (docs/versioning.md). Start from: "
             + $"git -C {GenerationConfiguration.SourcePath} log --oneline {update.PreviousCommit}..{update.Commit}",
         $"Stage the new submodule commit with the derived files: git add {GenerationConfiguration.SourcePath} " + string.Join(' ', UpstreamUpdate.TrackedPaths),
-        "Run `native build` and the tests: dotnet build Moonlark.Native.slnx -c Release -warnaserror && dotnet test Moonlark.Native.slnx -c Release",
+        "Rebuild and verify the native library, then run the tests: native build --rid <rid>, native verify, dotnet build Moonlark.Native.slnx -c Release -warnaserror and dotnet test Moonlark.Native.slnx -c Release",
     ];
 }

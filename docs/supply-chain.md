@@ -1,9 +1,10 @@
 # Native supply-chain policy
 
 Pins live in eng/pins; the libchdr commit also appears in its family props.
-libchdr will be a submodule at that reviewed commit. MAME is a hash-verified
-source tarball. No binary is generated or installed during MSBuild. Native
-builds and ClangSharp generation are subsequent implementation gates.
+libchdr is a submodule at that reviewed commit. MAME is a hash-verified
+source tarball. No binary is generated or installed during MSBuild. Bindings are
+generated from the pinned headers by the pinned ClangSharp tool, and CI rejects
+binding drift; native builds remain local and unqualified until the native gate.
 
 Only CI produces repository binaries, through reviewed automated PRs that carry
 manifests and attestations. No local binary is committed. Each binary manifest

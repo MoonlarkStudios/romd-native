@@ -26,7 +26,7 @@ locally.
 
 | Python (lines incl. tests) | C# replacement |
 | --- | --- |
-| `eng/check.py` (296) | `repo check [--tag]`. The closed workflow grammar now allowlists only dotnet commands and requires the drift check in CI. |
+| `eng/check.py` (296) | `repo check [--tag]`. The closed workflow grammar allowlists only dotnet commands, requires the drift check in CI and, after review, also closes earlier bypasses (below). |
 | `eng/build_libchdr.py`, `verify_libchdr.py`, `run_native_layout.py`, `test_libchdr.py` (959) | `native build`, `native verify`. Build settings live only in `CMakeLists.txt` and `CMakePresets.json`. CMake generates the platform export lists from `exports.txt`. The recipe (schema 2) records the location-independent effective configuration from the CMake File API instead of a duplicated flag table. The layout probe is a CMake target. |
 | `generation/libchdr/generate.py`, `test_generate.py`, `generate.rsp` (491) | `generate [--check]`: typed arguments to the pinned CLI tool, with fixed-width integer remaps, committing raw output. `upstream update --commit SHA` rewrites the pin, props, export allowlist, bindings and contract together, with rollback. |
 | `native/chdman/build.py`, `test_build.py` (264) | `chdman build`, with stricter validate-all-before-extract tar handling through `System.Formats.Tar`. |
@@ -46,7 +46,7 @@ failed at the G2 baseline, now reads calling conventions from modified field typ
 | --- | --- |
 | Baseline, before any change | `check.py` PASS; Python unittest 38 + 17 + 6 + 7 OK; build 0 warnings; tests 200/201 (pre-existing callback test failure) |
 | `dotnet restore --locked-mode`, `build -warnaserror` | PASS, 0 warnings |
-| `dotnet test` | PASS: Moonlark.Libchdr.Tests 204/204, Moonlark.Native.Engineering.Tests 319/319 |
+| `dotnet test` | PASS: Moonlark.Libchdr.Tests 204/204, Moonlark.Native.Engineering.Tests 319/319 (352/352 after the review fixes below) |
 | `repo check`; with tags `libchdr-v1.0.0-preview.1`, `chdman-0.289-r1` | PASS |
 | `repo check --tag libchdr-v0.3.0` | Expected FAIL |
 | `generate --check`, real pinned tool | PASS, 19 imports. Raw output is byte-identical to the Python generator's raw output. The tracked binding diff is the import mechanism only. |
@@ -70,6 +70,38 @@ Negative probes failed closed with their intended messages:
 - a failing generator, after which `upstream update` rolled back.
 
 Raw logs are kept in ROMD's ignored `tmp/`, prefix `romd-native-cs-`.
+
+## Independent review and fixes (2026-10-06)
+
+A read-only reviewer compared every check with the Python baseline. Each finding
+was fixed with a regression test, and each fix was mutation-checked: removing it
+turns its tests red.
+
+- **Blocker, a regression.** The workflow lint split lines on LF only. CR, NEL,
+  LS and PS could hide `permissions: write-all`, unpinned actions or `run` steps,
+  where Python had refused them. Workflows must now be LF-terminated printable
+  ASCII before any check runs.
+- **Major, already present in the Python baseline.** The lint did not bind
+  `run` and `uses` values completely. Flow sequences, colon-only lines that YAML
+  folds into a `run` value, and unchecked `on`, `runs-on` and checkout values all
+  passed. Every key now has an exact value rule, flow sequences are limited to
+  the two reviewed trigger lines, and continuation lines are refused.
+- **Minor: the drift check could be gated to tags.** `if:` is now allowed only on
+  the tag-check step.
+- **Minor: tool resolution.** Bare tool names resolved from the application and
+  current directory before PATH. They now resolve only from absolute entries of
+  the explicit PATH.
+- **Minor: default logs.** A FIFO or other non-regular default log passed the
+  guard. Logs must now be regular files.
+- **Minor: case-variant paths.** Artifacts containment compared case-insensitively
+  on macOS; components are now compared ordinally.
+- **Minor: the location guard.** It rejected only paths it knew about. Any rooted
+  host path token in a recipe now fails.
+- **Allocation-test flake.** The reviewer saw
+  `ChdDataSourceTests.FileReadsAllocateNothingAfterWarmup` fail once in a
+  full-solution run. It was not reproduced in 18 runs, 12 of them under full CPU
+  contention. The test now requires one allocation-free steady-state window out
+  of five; this hardening is unverified against the original failure.
 
 ## Failed attempts retained
 

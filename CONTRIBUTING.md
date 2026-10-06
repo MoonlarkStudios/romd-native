@@ -25,6 +25,9 @@ releases must set PackageValidationBaselineVersion to the previous published
 release. Do not suppress diagnostics or alter thresholds to pass.
 
 CI and release configuration are primary-owned. The initial workflows validate
-source conventions only and have contents:read permissions. They cannot publish
+source conventions and generated-binding drift only, restoring the pinned
+ClangSharp tool for the drift check, and have contents:read permissions. The
+`repo check` lint accepts only a closed, LF-terminated ASCII workflow grammar
+with exact reviewed keys, values, commands and SHA-pinned actions. They cannot publish
 packages, release assets, tags, attestations or binary PRs. An approved release
 pipeline must add those separately with explicit approval and least privilege.

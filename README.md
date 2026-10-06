@@ -15,9 +15,17 @@ other RIDs are unsupported. A glibc baseline must be measured before release.
 dotnet restore Moonlark.Native.slnx --locked-mode
 dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
 dotnet test Moonlark.Native.slnx -c Release --no-build --no-restore
-python3 -B eng/check.py
-python3 -B -m unittest discover -s eng -p 'test_*.py'
+dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check
+dotnet tool restore
+dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- generate --check
 ```
+
+All engineering tooling is C# in `eng/Moonlark.Native.Engineering`, tested by
+`tests/Moonlark.Native.Engineering.Tests`; there are no Python scripts.
+`generate --check` fails when the committed bindings differ from the pinned
+headers. To move the libchdr pin, fetch the reviewed commit into the submodule,
+then run `upstream update --commit <sha>`: it rewrites the pin, props, export
+allowlist and bindings together, or restores all of them on failure.
 
 SourceLink is provided by the .NET SDK. Libraries use deterministic builds,
 embedded symbols, XML documentation errors, public API baselines and NuGet

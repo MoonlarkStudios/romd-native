@@ -4,11 +4,11 @@ All data is deterministic and contains no game content. Generate into ignored
 artifacts with the exact pinned, locally built chdman:
 
 ```sh
-python3 -B tests/fixtures/generate.py \
+dotnet run --project eng/Moonlark.Native.Engineering -c Release -- fixtures generate \
   --chdman artifacts/tools/chdman/osx-arm64/native/chdman \
   --manifest artifacts/tools/chdman/osx-arm64/build-manifest.json \
   --log /absolute/path/fixtures.log
-python3 -B -m unittest discover -s tests/fixtures -v
+dotnet test tests/Moonlark.Native.Engineering.Tests -c Release --filter "FullyQualifiedName~Fixtures"
 ```
 
 The 1 MiB DVD source is a logical 2,048-byte sector stream with repeated

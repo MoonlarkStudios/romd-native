@@ -5,7 +5,7 @@ the BCL and the exact family native package. Tooling and test dependencies are
 centrally pinned and locked. Restore once to update locks deliberately; CI
 uses `dotnet restore --locked-mode`. No build downloads native assets.
 
-Run the five foundation commands in [README](README.md). Also run
+Run the foundation commands in [README](README.md). Also run
 `dotnet pack Moonlark.Native.slnx -c Release --no-restore`; it currently rejects
 unqualified packages by design. This rejection is not a packaging pass and the
 foundation is not a complete wrapper release. Do not remove the gate until

@@ -92,12 +92,35 @@ public sealed class RepositoryCheckTests
     [InlineData("    tags: ['libchdr-*', 'chdman-*']")]
     [InlineData("        if: github.ref_type == 'tag'")]
     [InlineData("          EXPECTED_TAG: ${{ github.ref_name }}")]
-    [InlineData("      - run: python3 -B eng/check.py --tag \"$EXPECTED_TAG\"")]
+    [InlineData("      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check --tag \"$EXPECTED_TAG\"")]
     public void CommentedTagRoutingIsNotActiveEvidence(string line)
     {
         using var directory = Copy();
         Replace(directory, "ci.yml", line, "#" + line);
         Assert.Contains("actual library/tool tag", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The generation drift check cannot be removed or commented out of CI.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("#")]
+    public void GenerationDriftCheckCannotDisappear(string prefix)
+    {
+        using var directory = Copy();
+        string line = "      - run: " + RepositoryCheck.DriftCheck + "\n";
+        Replace(directory, "ci.yml", line, prefix.Length == 0 ? "" : prefix + line);
+        Assert.Contains("generation drift check", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Retired Python commands and the Python setup action are no longer reviewed CI inputs.</summary>
+    [Theory]
+    [InlineData("      - run: dotnet test Moonlark.Native.slnx -c Release --no-build --no-restore\n", "      - run: python3 -B eng/check.py\n", "unreviewed source command")]
+    [InlineData("      - run: dotnet tool restore\n", "      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97\n", "unreviewed action")]
+    public void RetiredPythonToolingIsRejected(string original, string replacement, string message)
+    {
+        using var directory = Copy();
+        Replace(directory, "ci.yml", original, original + replacement);
+        Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
     private static TemporaryDirectory Copy()

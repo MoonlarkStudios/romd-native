@@ -9,12 +9,13 @@ inventory and build provenance. The preflight workflow publishes no binary.
 The local preparation recipe currently supports macOS ARM64 only:
 
 ```sh
-python3 -B native/chdman/build.py --archive /absolute/path/mame0289.tar.gz \
-  --output artifacts/tools/chdman/osx-arm64 --jobs 4 --log /absolute/path/build.log
-python3 -B -m unittest discover -s native/chdman -v
+dotnet run --project eng/Moonlark.Native.Engineering -c Release -- chdman build \
+  --archive /absolute/path/mame0289.tar.gz --output artifacts/tools/chdman/osx-arm64 \
+  --jobs 4 --log /absolute/path/build.log
+dotnet test tests/Moonlark.Native.Engineering.Tests -c Release --filter "FullyQualifiedName~Chdman"
 ```
 
-The script verifies the archive size and SHA-256 before safely extracting it.
+The command verifies the archive size and SHA-256 before safely extracting it.
 It builds MAME's bundled GENie, generates the tool projects and builds the
 chdman target with the bundled codec archives. It records the pinned commit in
 the version banner. The final link explicitly omits emulator frameworks from
@@ -29,3 +30,10 @@ MAME and its bundled GENie/FLAC emit compiler warnings on Apple clang 21. These
 remain visible in the raw log, with upstream warning flags unchanged. This
 local tool is explicitly unqualified, has no attestation and must never be
 committed as a native binary.
+
+The receipt's `recipeSha256` is SHA-256 over a `shasum -a 256` listing of the C#
+recipe sources, `eng/Moonlark.Native.Engineering/Chdman/*.cs`, in ordinal path
+order. The linked binary's LC_UUID depends on the length of the absolute build
+path, so byte comparisons between rebuilds need an output path of the same
+length; the C# recipe reproduced the Python recipe's final digest
+`e47a873059df60e1e706c1189e89968427ed8a36750d3f665c45a598a477cda1` that way.

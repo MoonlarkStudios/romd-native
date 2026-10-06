@@ -12,34 +12,38 @@ internal static partial class RepositoryCheck
     {
         ["actions/checkout"] = "3d3c42e5aac5ba805825da76410c181273ba90b1",
         ["actions/setup-dotnet"] = "a98b56852c35b8e3190ac28c8c2271da59106c68",
-        ["actions/setup-python"] = "5fda3b95a4ea91299a34e894583c3862153e4b97",
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> WorkflowKeys = new[]
     {
         "name", "on", "pull_request", "push", "branches", "tags", "permissions",
-        "contents", "jobs", "foundation", "source", "preflight", "runs-on",
+        "contents", "jobs", "foundation", "generation", "source", "preflight", "runs-on",
         "timeout-minutes", "env", "CI", "steps", "uses", "with",
-        "persist-credentials", "global-json-file", "python-version", "run", "if",
+        "persist-credentials", "submodules", "fetch-depth", "global-json-file", "run", "if",
         "workflow_dispatch", "inputs", "tag", "description", "required", "type",
         "EXPECTED_TAG",
     }.ToFrozenSet(StringComparer.Ordinal);
 
+    private const string Engineering = "dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- ";
+
+    internal const string DriftCheck = Engineering + "generate --check";
+
     internal static readonly FrozenSet<string> SourceCommands = new[]
     {
-        "python3 -B eng/check.py",
-        "python3 -B eng/check.py --tag \"$EXPECTED_TAG\"",
-        "python3 -B -m unittest discover -s eng -p 'test_*.py'",
         "dotnet restore Moonlark.Native.slnx --locked-mode",
         "dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror",
         "dotnet test Moonlark.Native.slnx -c Release --no-build --no-restore",
+        "dotnet tool restore",
+        Engineering + "repo check",
+        Engineering + "repo check --tag \"$EXPECTED_TAG\"",
+        DriftCheck,
     }.ToFrozenSet(StringComparer.Ordinal);
 
     internal static readonly FrozenSet<string> RequiredCiLines = new[]
     {
         "  push:",
         "    tags: ['libchdr-*', 'chdman-*']",
-        "      - run: python3 -B eng/check.py --tag \"$EXPECTED_TAG\"",
+        "      - run: " + Engineering + "repo check --tag \"$EXPECTED_TAG\"",
         "        if: github.ref_type == 'tag'",
         "          EXPECTED_TAG: ${{ github.ref_name }}",
     }.ToFrozenSet(StringComparer.Ordinal);
@@ -104,9 +108,11 @@ internal static partial class RepositoryCheck
             "Missing or unexpected foundation workflow") is { } inventory) return inventory;
         foreach (string path in paths)
             if (ValidateWorkflow(Path.GetFileName(path), File.ReadAllText(path)) is { } workflow) return workflow;
-        string[] ci = File.ReadAllText(Path.Combine(directory, "ci.yml")).Split('\n');
-        return Check.That(RequiredCiLines.IsSubsetOf(ActiveLines(ci)),
-            "CI must validate actual library/tool tag refs, including family-native tag rejection");
+        HashSet<string> ci = ActiveLines(File.ReadAllText(Path.Combine(directory, "ci.yml")).Split('\n'));
+        if (Check.That(RequiredCiLines.IsSubsetOf(ci),
+            "CI must validate actual library/tool tag refs, including family-native tag rejection") is { } tags) return tags;
+        // Bindings regenerate from the pinned headers; CI must refuse any commit whose bindings drifted.
+        return Check.That(ci.Contains("      - run: " + DriftCheck), "CI must run the generation drift check");
     }
 
     /// <summary>A deliberately closed skeleton grammar, not a YAML parser: unrecognized forms fail instead of being ignored.</summary>

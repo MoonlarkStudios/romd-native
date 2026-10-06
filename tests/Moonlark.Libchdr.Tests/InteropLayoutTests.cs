@@ -170,10 +170,12 @@ public sealed unsafe class InteropLayoutTests
 
     private static void CheckCallback(Type owner, string name, Type result, params Type[] parameters)
     {
-        Type pointer = owner.GetField(name)!.FieldType;
+        FieldInfo field = owner.GetField(name)!;
+        Type pointer = field.FieldType;
         Assert.True(pointer.IsFunctionPointer);
         Assert.True(pointer.IsUnmanagedFunctionPointer);
-        Assert.Equal([typeof(CallConvCdecl)], pointer.GetFunctionPointerCallingConventions());
+        // Calling-convention modifiers exist only on the modified type; type identity uses the unmodified one.
+        Assert.Equal([typeof(CallConvCdecl)], field.GetModifiedFieldType().GetFunctionPointerCallingConventions());
         Assert.Equal(result, pointer.GetFunctionPointerReturnType());
         Assert.Equal(parameters, pointer.GetFunctionPointerParameterTypes());
     }

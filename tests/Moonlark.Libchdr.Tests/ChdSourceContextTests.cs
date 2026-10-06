@@ -1,0 +1,286 @@
+using Moonlark.Libchdr.Internal;
+using Xunit;
+
+namespace Moonlark.Libchdr.Tests;
+
+/// <summary>Exercises the generated callback table through unmanaged Cdecl function pointers.</summary>
+public sealed unsafe class ChdSourceContextTests
+{
+    /// <summary>fread fills legal short source chunks and returns complete item counts.</summary>
+    [Fact]
+    public void ReadCallbackCombinesShortReads()
+    {
+        using var source = new Source(10, maximumRead: 2);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[6];
+        Assert.Equal((nuint)3, context.Callbacks->fread(buffer, 2, 3, context.UserData));
+        Assert.Equal(3, source.ReadCalls);
+        for (int index = 0; index < 6; index++) Assert.Equal((byte)index, buffer[index]);
+        Assert.Equal(10UL, context.Callbacks->fsize(context.UserData));
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Partial trailing items advance the position by every byte consumed.</summary>
+    [Fact]
+    public void ReadCallbackCountsOnlyCompleteItemsAtEof()
+    {
+        using var source = new Source(5, maximumRead: 2);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[9];
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 3, 3, context.UserData));
+        for (int index = 0; index < 5; index++) Assert.Equal((byte)index, buffer[index]);
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal(5, source.LastOffset);
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, -1, (int)SeekOrigin.Current));
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal((byte)4, buffer[0]);
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Native positions belong to each context rather than a shared data source.</summary>
+    [Fact]
+    public void ContextsMaintainIndependentSeekPositions()
+    {
+        using var source = new Source(10);
+        using var first = new ChdSourceContext(source, leaveOpen: true);
+        using var second = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[2];
+        Assert.Equal(0, first.Callbacks->fseek(first.UserData, 5, (int)SeekOrigin.Begin));
+        Assert.Equal((nuint)2, first.Callbacks->fread(buffer, 1, 2, first.UserData));
+        Assert.Equal((byte)5, buffer[0]);
+        Assert.Equal((nuint)2, second.Callbacks->fread(buffer, 1, 2, second.UserData));
+        Assert.Equal((byte)0, buffer[0]);
+        Assert.Equal(0, first.Callbacks->fseek(first.UserData, -1, (int)SeekOrigin.End));
+        Assert.Equal((nuint)1, first.Callbacks->fread(buffer, 1, 2, first.UserData));
+        Assert.Equal((byte)9, buffer[0]);
+    }
+
+    /// <summary>Positional metadata reads never mutate the native callback cursor.</summary>
+    [Fact]
+    public void ManagedPositionalReadsPreserveNativePosition()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, 2, (int)SeekOrigin.Begin));
+        Span<byte> bytes = stackalloc byte[1];
+        Assert.Equal(1, context.ReadSourceAt(8, bytes));
+        Assert.Equal((byte)8, bytes[0]);
+        Assert.Equal(10, context.SourceLength);
+        fixed (byte* buffer = bytes)
+            Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal((byte)2, bytes[0]);
+    }
+
+    /// <summary>Malformed native requests fail before any pointer dereference or source access.</summary>
+    [Fact]
+    public void ReadCallbackRejectsInvalidArithmeticWithoutManagedFault()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[1];
+        Assert.Equal((nuint)0, context.Callbacks->fread(null, 0, 3, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread(null, 3, 0, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, nuint.MaxValue, 2, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, (nuint)int.MaxValue + 1, 1, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread((void*)nuint.MaxValue, 1, 1, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread(null, 1, 1, context.UserData));
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, long.MaxValue, (int)SeekOrigin.Begin));
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal(0, source.ReadCalls);
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Null userdata cannot leak a managed exception through any callback.</summary>
+    [Fact]
+    public void CallbacksRejectNullUserData()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[1];
+        Assert.Equal(ulong.MaxValue, context.Callbacks->fsize(null));
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, null));
+        Assert.Equal(-1, context.Callbacks->fseek(null, 0, (int)SeekOrigin.Begin));
+        Assert.Equal(-1, context.Callbacks->fclose(null));
+        Assert.Equal(0, source.ReadCalls);
+        Assert.Equal(0, source.CloseCount);
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Rejected origins and checked seek targets leave the last good position intact.</summary>
+    [Fact]
+    public void SeekCallbackPreservesPositionOnFailure()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[1];
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, 3, (int)SeekOrigin.Begin));
+        Assert.Equal(-1, context.Callbacks->fseek(context.UserData, -4, (int)SeekOrigin.Current));
+        Assert.Equal(-1, context.Callbacks->fseek(context.UserData, long.MaxValue, (int)SeekOrigin.Current));
+        Assert.Equal(-1, context.Callbacks->fseek(context.UserData, 0, -1));
+        Assert.Equal(-1, context.Callbacks->fseek(context.UserData, 0, 3));
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal((byte)3, buffer[0]);
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Source faults cross back only after native return, with the original identity and stack.</summary>
+    [Fact]
+    public void ReadCallbackRetainsCompletedItemsAndRestoresSourceFault()
+    {
+        using var source = new Source(10, maximumRead: 2) { FailReadCall = 2 };
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[6];
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 2, 3, context.UserData));
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal(2, source.ReadCalls);
+        var fault = Assert.Throws<IOException>(context.ThrowIfFaulted);
+        Assert.Same(source.ReadFault, fault);
+        Assert.Contains("Source.Read", fault.StackTrace, StringComparison.Ordinal);
+        context.ThrowIfFaulted();
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 2, 1, context.UserData));
+        Assert.Equal((byte)2, buffer[0]);
+    }
+
+    /// <summary>Length and end-seek source exceptions are restored rather than escaping the thunk.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SourceLengthFaultIsCaptured(bool seek)
+    {
+        using var source = new Source(10) { FailLength = true };
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        if (seek) Assert.Equal(-1, context.Callbacks->fseek(context.UserData, 0, (int)SeekOrigin.End));
+        else Assert.Equal(ulong.MaxValue, context.Callbacks->fsize(context.UserData));
+        Assert.Same(source.LengthFault, Assert.Throws<IOException>(context.ThrowIfFaulted));
+        source.FailLength = false;
+        Assert.Equal(10UL, context.Callbacks->fsize(context.UserData));
+    }
+
+    /// <summary>Negative source lengths are source contract faults rather than unsigned native sizes.</summary>
+    [Fact]
+    public void NegativeSourceLengthIsCaptured()
+    {
+        using var source = new Source(-1);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        Assert.Equal(ulong.MaxValue, context.Callbacks->fsize(context.UserData));
+        Assert.Throws<IOException>(context.ThrowIfFaulted);
+    }
+
+    /// <summary>Impossible source byte counts are contract faults, never position updates.</summary>
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void SourceByteCountViolationIsCaptured(int read)
+    {
+        using var source = new Source(10) { InvalidRead = read };
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[2];
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 2, context.UserData));
+        Assert.Throws<IOException>(context.ThrowIfFaulted);
+        source.InvalidRead = null;
+        Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Equal((byte)0, buffer[0]);
+    }
+
+    /// <summary>Native close consumes owned sources once and preserves sources opened with leaveOpen.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NativeCloseAndManagedDisposeHonorOwnership(bool leaveOpen)
+    {
+        var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen);
+        var callbacks = context.Callbacks;
+        void* userData = context.UserData;
+        Assert.Equal(0, callbacks->fclose(userData));
+        Assert.Equal(0, callbacks->fclose(userData));
+        context.Dispose();
+        context.Dispose();
+        Assert.Equal(leaveOpen ? 0 : 1, source.CloseCount);
+        context.ThrowIfFaulted();
+        Assert.Throws<ObjectDisposedException>(() => context.SourceLength);
+        Assert.Throws<ObjectDisposedException>(() => context.ReadSourceAt(0, Array.Empty<byte>()));
+    }
+
+    /// <summary>Disposal remains nonthrowing while a fresh close exception is available to managed callers.</summary>
+    [Fact]
+    public void ConsumedReadFaultDoesNotMaskLaterCloseFault()
+    {
+        var source = new Source(10) { FailReadCall = 1, FailClose = true };
+        using var context = new ChdSourceContext(source, leaveOpen: false);
+        byte* buffer = stackalloc byte[1];
+        Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, context.UserData));
+        Assert.Same(source.ReadFault, Assert.Throws<IOException>(context.ThrowIfFaulted));
+        Assert.Equal(-1, context.Callbacks->fclose(context.UserData));
+        context.Dispose();
+        Assert.Equal(1, source.CloseCount);
+        Assert.Same(source.CloseFault, Assert.Throws<IOException>(context.ThrowIfFaulted));
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>Managed cleanup also consumes the source when native ownership was never entered.</summary>
+    [Fact]
+    public void ManagedDisposeWithoutNativeCloseConsumesSourceOnce()
+    {
+        var source = new Source(10) { FailClose = true };
+        using var context = new ChdSourceContext(source, leaveOpen: false);
+        context.Dispose();
+        context.Dispose();
+        Assert.Equal(1, source.CloseCount);
+        Assert.Same(source.CloseFault, Assert.Throws<IOException>(context.ThrowIfFaulted));
+    }
+
+    /// <summary>Warm callback reads and seeks perform no managed allocation.</summary>
+    [Fact]
+    public void CallbacksAllocateNothingAfterWarmup()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        var callbacks = context.Callbacks;
+        void* userData = context.UserData;
+        byte* buffer = stackalloc byte[2];
+        for (int index = 0; index < 100; index++)
+        {
+            callbacks->fseek(userData, 0, (int)SeekOrigin.Begin);
+            callbacks->fread(buffer, 1, 2, userData);
+        }
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 1_000; index++)
+        {
+            callbacks->fseek(userData, 0, (int)SeekOrigin.Begin);
+            callbacks->fread(buffer, 1, 2, userData);
+            callbacks->fsize(userData);
+        }
+        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+    }
+
+    private sealed class Source(long length, int maximumRead = int.MaxValue) : IChdDataSource
+    {
+        internal int ReadCalls { get; private set; }
+        internal int CloseCount { get; private set; }
+        internal long LastOffset { get; private set; }
+        internal int? InvalidRead { get; set; }
+        internal int? FailReadCall { get; set; }
+        internal bool FailLength { get; set; }
+        internal bool FailClose { get; set; }
+        internal IOException ReadFault { get; } = new("Read failed.");
+        internal IOException LengthFault { get; } = new("Length failed.");
+        internal IOException CloseFault { get; } = new("Close failed.");
+        public long Length => FailLength ? throw LengthFault : length;
+        public int Read(long offset, Span<byte> destination)
+        {
+            ReadCalls++;
+            LastOffset = offset;
+            if (ReadCalls == FailReadCall) throw ReadFault;
+            if (InvalidRead is { } invalid) return invalid;
+            int read = (int)Math.Min(Math.Min(destination.Length, maximumRead), Math.Max(0, length - offset));
+            for (int index = 0; index < read; index++) destination[index] = (byte)(offset + index);
+            return read;
+        }
+        public void Dispose()
+        {
+            CloseCount++;
+            if (FailClose) throw CloseFault;
+        }
+    }
+}

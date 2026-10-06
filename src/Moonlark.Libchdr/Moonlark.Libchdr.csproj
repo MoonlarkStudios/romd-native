@@ -12,8 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
-    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
-    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- The analyzer package adds both API baselines as AdditionalFiles. -->
   </ItemGroup>
   <Target Name="RejectUnqualifiedPackage" BeforeTargets="Pack">
     <Error Text="Libchdr packages are gated until the safe API, exact native dependency and real-binary qualification are complete." />

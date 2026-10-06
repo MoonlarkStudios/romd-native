@@ -1,1 +1,272 @@
 #nullable enable
+const Moonlark.Libchdr.ChdSha1.ByteLength = 20 -> int
+Moonlark.Libchdr.ChdCdImage
+Moonlark.Libchdr.ChdCdImage.Dispose() -> void
+Moonlark.Libchdr.ChdCdImage.ReadFrame(ulong chdFrame, System.Span<byte> destination) -> void
+Moonlark.Libchdr.ChdCdImage.ReadSector(uint trackNumber, uint storedTrackFrame, Moonlark.Libchdr.ChdCdSectorFormat format, System.Span<byte> destination) -> int
+Moonlark.Libchdr.ChdCdImage.Tracks.get -> System.ReadOnlySpan<Moonlark.Libchdr.ChdCdTrack>
+Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.Mode2Data = 3 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.Raw2352 = 0 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.Subcode96 = 2 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.UserData = 1 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.XaForm1UserData = 4 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSectorFormat.XaForm2UserData = 5 -> Moonlark.Libchdr.ChdCdSectorFormat
+Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdSubcodeType.None = 0 -> Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdSubcodeType.Rw = 1 -> Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdSubcodeType.RwRaw = 2 -> Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdTrack
+Moonlark.Libchdr.ChdCdTrack.ChdCdTrack() -> void
+Moonlark.Libchdr.ChdCdTrack.DataBytes.get -> int
+Moonlark.Libchdr.ChdCdTrack.Equals(Moonlark.Libchdr.ChdCdTrack other) -> bool
+Moonlark.Libchdr.ChdCdTrack.Frames.get -> uint
+Moonlark.Libchdr.ChdCdTrack.MetadataTag.get -> Moonlark.Libchdr.ChdMetadataTag
+Moonlark.Libchdr.ChdCdTrack.Number.get -> uint
+Moonlark.Libchdr.ChdCdTrack.PadFrames.get -> uint
+Moonlark.Libchdr.ChdCdTrack.PostgapFrames.get -> uint
+Moonlark.Libchdr.ChdCdTrack.PregapFrames.get -> uint
+Moonlark.Libchdr.ChdCdTrack.PregapStored.get -> bool
+Moonlark.Libchdr.ChdCdTrack.PregapSubtype.get -> Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdTrack.PregapType.get -> Moonlark.Libchdr.ChdCdTrackType?
+Moonlark.Libchdr.ChdCdTrack.SubcodeBytes.get -> int
+Moonlark.Libchdr.ChdCdTrack.Subtype.get -> Moonlark.Libchdr.ChdCdSubcodeType
+Moonlark.Libchdr.ChdCdTrack.Type.get -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Audio = 7 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode1 = 0 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode1Raw = 1 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode2 = 2 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode2Form1 = 3 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode2Form2 = 4 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode2FormMixed = 5 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCdTrackType.Mode2Raw = 6 -> Moonlark.Libchdr.ChdCdTrackType
+Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.AvHuffman = 1635149941 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.CdFlac = 1667524204 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.CdLzma = 1667525754 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.CdZlib = 1667529324 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.CdZstd = 1667529331 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.Flac = 1718378851 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.Huffman = 1752524390 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.Lzma = 1819962721 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.None = 0 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.Zlib = 2053925218 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdCodec.Zstd = 2054386788 -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.CannotCreateFile = 16 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.CannotVerify = 17 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.CodecError = 11 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.CompressionError = 15 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.DecompressionError = 14 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.FileNotFound = 6 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.FileNotWritable = 8 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.HunkOutOfRange = 13 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidData = 5 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidFile = 3 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidMetadata = 23 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidMetadataSize = 20 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidParameter = 4 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidParent = 12 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.InvalidState = 24 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.MetadataNotFound = 19 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.NoAsyncOperation = 26 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.NoInterface = 1 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.None = 0 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.NotSupported = 18 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.OperationPending = 25 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.OutOfMemory = 2 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.ReadError = 9 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.RequiresParent = 7 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.UnsupportedFormat = 27 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.UnsupportedVersion = 21 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.VerifyIncomplete = 22 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdError.WriteError = 10 -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdException
+Moonlark.Libchdr.ChdException.ChdException(Moonlark.Libchdr.ChdError error, string! operation) -> void
+Moonlark.Libchdr.ChdException.Error.get -> Moonlark.Libchdr.ChdError
+Moonlark.Libchdr.ChdFile
+Moonlark.Libchdr.ChdFile.Dispose() -> void
+Moonlark.Libchdr.ChdFile.EnumerateMetadata() -> Moonlark.Libchdr.ChdMetadataEnumerator
+Moonlark.Libchdr.ChdFile.Header.get -> Moonlark.Libchdr.ChdHeader
+Moonlark.Libchdr.ChdFile.ReadAheadBytes.get -> ulong
+Moonlark.Libchdr.ChdFile.ReadAt(long offset, System.Span<byte> destination) -> int
+Moonlark.Libchdr.ChdFile.ReadHunk(uint index, System.Span<byte> destination) -> void
+Moonlark.Libchdr.ChdFile.TryGetMetadata(Moonlark.Libchdr.ChdMetadataTag tag, uint index, System.Span<byte> destination, out Moonlark.Libchdr.ChdMetadataInfo info) -> bool
+Moonlark.Libchdr.ChdHeader
+Moonlark.Libchdr.ChdHeader.ChdHeader() -> void
+Moonlark.Libchdr.ChdHeader.Equals(Moonlark.Libchdr.ChdHeader other) -> bool
+Moonlark.Libchdr.ChdHeader.GetCodec(int slot) -> Moonlark.Libchdr.ChdCodec
+Moonlark.Libchdr.ChdHeader.HasParent.get -> bool
+Moonlark.Libchdr.ChdHeader.HunkBytes.get -> uint
+Moonlark.Libchdr.ChdHeader.HunkCount.get -> uint
+Moonlark.Libchdr.ChdHeader.LogicalBytes.get -> ulong
+Moonlark.Libchdr.ChdHeader.OverallSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdHeader.ParentSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdHeader.RawSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdHeader.UnitBytes.get -> uint
+Moonlark.Libchdr.ChdHeader.Version.get -> uint
+Moonlark.Libchdr.ChdIntegrity
+Moonlark.Libchdr.ChdIntegrityResult
+Moonlark.Libchdr.ChdIntegrityResult.ChdIntegrityResult() -> void
+Moonlark.Libchdr.ChdIntegrityResult.ChdIntegrityResult(Moonlark.Libchdr.ChdSha1 ComputedRawSha1, Moonlark.Libchdr.ChdSha1 StoredRawSha1, Moonlark.Libchdr.ChdSha1 ComputedOverallSha1, Moonlark.Libchdr.ChdSha1 StoredOverallSha1) -> void
+Moonlark.Libchdr.ChdIntegrityResult.ComputedOverallSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdIntegrityResult.ComputedOverallSha1.init -> void
+Moonlark.Libchdr.ChdIntegrityResult.ComputedRawSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdIntegrityResult.ComputedRawSha1.init -> void
+Moonlark.Libchdr.ChdIntegrityResult.Deconstruct(out Moonlark.Libchdr.ChdSha1 ComputedRawSha1, out Moonlark.Libchdr.ChdSha1 StoredRawSha1, out Moonlark.Libchdr.ChdSha1 ComputedOverallSha1, out Moonlark.Libchdr.ChdSha1 StoredOverallSha1) -> void
+Moonlark.Libchdr.ChdIntegrityResult.Equals(Moonlark.Libchdr.ChdIntegrityResult other) -> bool
+Moonlark.Libchdr.ChdIntegrityResult.HasStoredOverallSha1.get -> bool
+Moonlark.Libchdr.ChdIntegrityResult.HasStoredRawSha1.get -> bool
+Moonlark.Libchdr.ChdIntegrityResult.IsVerified.get -> bool
+Moonlark.Libchdr.ChdIntegrityResult.OverallMatches.get -> bool
+Moonlark.Libchdr.ChdIntegrityResult.RawMatches.get -> bool
+Moonlark.Libchdr.ChdIntegrityResult.StoredOverallSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdIntegrityResult.StoredOverallSha1.init -> void
+Moonlark.Libchdr.ChdIntegrityResult.StoredRawSha1.get -> Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdIntegrityResult.StoredRawSha1.init -> void
+Moonlark.Libchdr.ChdMetadataEnumerator
+Moonlark.Libchdr.ChdMetadataEnumerator.ChdMetadataEnumerator() -> void
+Moonlark.Libchdr.ChdMetadataEnumerator.Current.get -> Moonlark.Libchdr.ChdMetadataInfo
+Moonlark.Libchdr.ChdMetadataEnumerator.GetEnumerator() -> Moonlark.Libchdr.ChdMetadataEnumerator
+Moonlark.Libchdr.ChdMetadataEnumerator.MoveNext() -> bool
+Moonlark.Libchdr.ChdMetadataInfo
+Moonlark.Libchdr.ChdMetadataInfo.ChdMetadataInfo() -> void
+Moonlark.Libchdr.ChdMetadataInfo.ChdMetadataInfo(Moonlark.Libchdr.ChdMetadataTag Tag, uint Length, byte Flags) -> void
+Moonlark.Libchdr.ChdMetadataInfo.Deconstruct(out Moonlark.Libchdr.ChdMetadataTag Tag, out uint Length, out byte Flags) -> void
+Moonlark.Libchdr.ChdMetadataInfo.Equals(Moonlark.Libchdr.ChdMetadataInfo other) -> bool
+Moonlark.Libchdr.ChdMetadataInfo.Flags.get -> byte
+Moonlark.Libchdr.ChdMetadataInfo.Flags.init -> void
+Moonlark.Libchdr.ChdMetadataInfo.IsChecksummed.get -> bool
+Moonlark.Libchdr.ChdMetadataInfo.Length.get -> uint
+Moonlark.Libchdr.ChdMetadataInfo.Length.init -> void
+Moonlark.Libchdr.ChdMetadataInfo.Tag.get -> Moonlark.Libchdr.ChdMetadataTag
+Moonlark.Libchdr.ChdMetadataInfo.Tag.init -> void
+Moonlark.Libchdr.ChdMetadataTag
+Moonlark.Libchdr.ChdMetadataTag.ChdMetadataTag() -> void
+Moonlark.Libchdr.ChdMetadataTag.ChdMetadataTag(uint Value) -> void
+Moonlark.Libchdr.ChdMetadataTag.TryFormat(System.Span<char> destination, out int charsWritten) -> bool
+Moonlark.Libchdr.ChdMetadataTag.Value.get -> uint
+Moonlark.Libchdr.ChdMetadataTag.Value.init -> void
+Moonlark.Libchdr.ChdOpenOptions
+Moonlark.Libchdr.ChdOpenOptions.<Clone>$() -> Moonlark.Libchdr.ChdOpenOptions!
+Moonlark.Libchdr.ChdOpenOptions.ChdOpenOptions() -> void
+Moonlark.Libchdr.ChdOpenOptions.Equals(Moonlark.Libchdr.ChdOpenOptions? other) -> bool
+Moonlark.Libchdr.ChdOpenOptions.ReadAheadBytes.get -> ulong
+Moonlark.Libchdr.ChdOpenOptions.ReadAheadBytes.init -> void
+Moonlark.Libchdr.ChdSha1
+Moonlark.Libchdr.ChdSha1.ChdSha1() -> void
+Moonlark.Libchdr.ChdSha1.Equals(Moonlark.Libchdr.ChdSha1 other) -> bool
+Moonlark.Libchdr.ChdSha1.IsEmpty.get -> bool
+Moonlark.Libchdr.ChdSha1.TryFormat(System.Span<char> destination, out int charsWritten) -> bool
+Moonlark.Libchdr.ChdSha1.TryWriteBytes(System.Span<byte> destination) -> bool
+Moonlark.Libchdr.ChdStream
+Moonlark.Libchdr.ChdStream.ChdStream(Moonlark.Libchdr.ChdFile! file) -> void
+Moonlark.Libchdr.ChdStream.ChdStream(Moonlark.Libchdr.ChdFile! file, bool leaveOpen) -> void
+Moonlark.Libchdr.IChdDataSource
+Moonlark.Libchdr.IChdDataSource.Length.get -> long
+Moonlark.Libchdr.IChdDataSource.Read(long offset, System.Span<byte> destination) -> int
+Moonlark.Libchdr.LibchdrBuildInfo
+Moonlark.Libchdr.LibchdrBuildInfo.BuildId.get -> string!
+Moonlark.Libchdr.LibchdrBuildInfo.FamilyVersion.get -> string!
+Moonlark.Libchdr.LibchdrBuildInfo.HasRawSectors.get -> bool
+Moonlark.Libchdr.LibchdrBuildInfo.HasSubcode.get -> bool
+Moonlark.Libchdr.LibchdrBuildInfo.UpstreamCommit.get -> string!
+Moonlark.Libchdr.LibchdrBuildInfo.UpstreamVersion.get -> string!
+Moonlark.Libchdr.LibchdrBuildInfo.VerifiesBlockCrc.get -> bool
+Moonlark.Libchdr.LibchdrLibrary
+override Moonlark.Libchdr.ChdCdTrack.GetHashCode() -> int
+override Moonlark.Libchdr.ChdHeader.GetHashCode() -> int
+override Moonlark.Libchdr.ChdIntegrityResult.GetHashCode() -> int
+override Moonlark.Libchdr.ChdMetadataInfo.GetHashCode() -> int
+override Moonlark.Libchdr.ChdMetadataTag.ToString() -> string!
+override Moonlark.Libchdr.ChdOpenOptions.Equals(object? obj) -> bool
+override Moonlark.Libchdr.ChdOpenOptions.GetHashCode() -> int
+override Moonlark.Libchdr.ChdOpenOptions.ToString() -> string!
+override Moonlark.Libchdr.ChdSha1.GetHashCode() -> int
+override Moonlark.Libchdr.ChdSha1.ToString() -> string!
+override Moonlark.Libchdr.ChdStream.BeginRead(byte[]! buffer, int offset, int count, System.AsyncCallback? callback, object? state) -> System.IAsyncResult!
+override Moonlark.Libchdr.ChdStream.BeginWrite(byte[]! buffer, int offset, int count, System.AsyncCallback? callback, object? state) -> System.IAsyncResult!
+override Moonlark.Libchdr.ChdStream.CanRead.get -> bool
+override Moonlark.Libchdr.ChdStream.CanSeek.get -> bool
+override Moonlark.Libchdr.ChdStream.CanTimeout.get -> bool
+override Moonlark.Libchdr.ChdStream.CanWrite.get -> bool
+override Moonlark.Libchdr.ChdStream.CopyToAsync(System.IO.Stream! destination, int bufferSize, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+override Moonlark.Libchdr.ChdStream.EndRead(System.IAsyncResult! asyncResult) -> int
+override Moonlark.Libchdr.ChdStream.EndWrite(System.IAsyncResult! asyncResult) -> void
+override Moonlark.Libchdr.ChdStream.Flush() -> void
+override Moonlark.Libchdr.ChdStream.FlushAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+override Moonlark.Libchdr.ChdStream.Length.get -> long
+override Moonlark.Libchdr.ChdStream.Position.get -> long
+override Moonlark.Libchdr.ChdStream.Position.set -> void
+override Moonlark.Libchdr.ChdStream.Read(byte[]! buffer, int offset, int count) -> int
+override Moonlark.Libchdr.ChdStream.Read(System.Span<byte> buffer) -> int
+override Moonlark.Libchdr.ChdStream.ReadAsync(byte[]! buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
+override Moonlark.Libchdr.ChdStream.ReadAsync(System.Memory<byte> buffer, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<int>
+override Moonlark.Libchdr.ChdStream.ReadByte() -> int
+override Moonlark.Libchdr.ChdStream.ReadTimeout.get -> int
+override Moonlark.Libchdr.ChdStream.ReadTimeout.set -> void
+override Moonlark.Libchdr.ChdStream.Seek(long offset, System.IO.SeekOrigin origin) -> long
+override Moonlark.Libchdr.ChdStream.SetLength(long value) -> void
+override Moonlark.Libchdr.ChdStream.Write(byte[]! buffer, int offset, int count) -> void
+override Moonlark.Libchdr.ChdStream.Write(System.ReadOnlySpan<byte> buffer) -> void
+override Moonlark.Libchdr.ChdStream.WriteAsync(byte[]! buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+override Moonlark.Libchdr.ChdStream.WriteAsync(System.ReadOnlyMemory<byte> buffer, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+override Moonlark.Libchdr.ChdStream.WriteTimeout.get -> int
+override Moonlark.Libchdr.ChdStream.WriteTimeout.set -> void
+static Moonlark.Libchdr.ChdCdImage.Open(Moonlark.Libchdr.ChdFile! file, bool leaveOpen = false) -> Moonlark.Libchdr.ChdCdImage!
+static Moonlark.Libchdr.ChdCdImage.SwapAudioSamples16(System.Span<byte> samples) -> void
+static Moonlark.Libchdr.ChdCdTrack.operator !=(Moonlark.Libchdr.ChdCdTrack left, Moonlark.Libchdr.ChdCdTrack right) -> bool
+static Moonlark.Libchdr.ChdCdTrack.operator ==(Moonlark.Libchdr.ChdCdTrack left, Moonlark.Libchdr.ChdCdTrack right) -> bool
+static Moonlark.Libchdr.ChdCdTrack.TryParse(Moonlark.Libchdr.ChdMetadataTag tag, System.ReadOnlySpan<byte> metadata, out Moonlark.Libchdr.ChdCdTrack track) -> bool
+static Moonlark.Libchdr.ChdFile.Open(Moonlark.Libchdr.IChdDataSource! source, bool leaveOpen) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.Open(Moonlark.Libchdr.IChdDataSource! source, bool leaveOpen, Moonlark.Libchdr.ChdOpenOptions? options) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.Open(string! path) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.Open(string! path, Moonlark.Libchdr.ChdOpenOptions? options) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.Open(System.IO.Stream! seekableStream, bool leaveOpen) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.Open(System.IO.Stream! seekableStream, bool leaveOpen, Moonlark.Libchdr.ChdOpenOptions? options) -> Moonlark.Libchdr.ChdFile!
+static Moonlark.Libchdr.ChdFile.TryOpen(Moonlark.Libchdr.IChdDataSource! source, bool leaveOpen, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error) -> bool
+static Moonlark.Libchdr.ChdFile.TryOpen(Moonlark.Libchdr.IChdDataSource! source, bool leaveOpen, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error, Moonlark.Libchdr.ChdOpenOptions? options) -> bool
+static Moonlark.Libchdr.ChdFile.TryOpen(string! path, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error) -> bool
+static Moonlark.Libchdr.ChdFile.TryOpen(string! path, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error, Moonlark.Libchdr.ChdOpenOptions? options) -> bool
+static Moonlark.Libchdr.ChdFile.TryOpen(System.IO.Stream! seekableStream, bool leaveOpen, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error) -> bool
+static Moonlark.Libchdr.ChdFile.TryOpen(System.IO.Stream! seekableStream, bool leaveOpen, out Moonlark.Libchdr.ChdFile? file, out Moonlark.Libchdr.ChdError error, Moonlark.Libchdr.ChdOpenOptions? options) -> bool
+static Moonlark.Libchdr.ChdHeader.operator !=(Moonlark.Libchdr.ChdHeader left, Moonlark.Libchdr.ChdHeader right) -> bool
+static Moonlark.Libchdr.ChdHeader.operator ==(Moonlark.Libchdr.ChdHeader left, Moonlark.Libchdr.ChdHeader right) -> bool
+static Moonlark.Libchdr.ChdIntegrity.Verify(Moonlark.Libchdr.ChdFile! file) -> Moonlark.Libchdr.ChdIntegrityResult
+static Moonlark.Libchdr.ChdIntegrity.Verify(Moonlark.Libchdr.ChdFile! file, System.Threading.CancellationToken cancellationToken) -> Moonlark.Libchdr.ChdIntegrityResult
+static Moonlark.Libchdr.ChdIntegrityResult.operator !=(Moonlark.Libchdr.ChdIntegrityResult left, Moonlark.Libchdr.ChdIntegrityResult right) -> bool
+static Moonlark.Libchdr.ChdIntegrityResult.operator ==(Moonlark.Libchdr.ChdIntegrityResult left, Moonlark.Libchdr.ChdIntegrityResult right) -> bool
+static Moonlark.Libchdr.ChdMetadataInfo.operator !=(Moonlark.Libchdr.ChdMetadataInfo left, Moonlark.Libchdr.ChdMetadataInfo right) -> bool
+static Moonlark.Libchdr.ChdMetadataInfo.operator ==(Moonlark.Libchdr.ChdMetadataInfo left, Moonlark.Libchdr.ChdMetadataInfo right) -> bool
+static Moonlark.Libchdr.ChdMetadataTag.CdTrack.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.CdTrackV2.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.Dvd.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.FromFourCC(System.ReadOnlySpan<char> text) -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.GdTrack.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.GdTrackLegacy.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdMetadataTag.TryParse(System.ReadOnlySpan<char> text, out Moonlark.Libchdr.ChdMetadataTag tag) -> bool
+static Moonlark.Libchdr.ChdMetadataTag.Wildcard.get -> Moonlark.Libchdr.ChdMetadataTag
+static Moonlark.Libchdr.ChdOpenOptions.operator !=(Moonlark.Libchdr.ChdOpenOptions? left, Moonlark.Libchdr.ChdOpenOptions? right) -> bool
+static Moonlark.Libchdr.ChdOpenOptions.operator ==(Moonlark.Libchdr.ChdOpenOptions? left, Moonlark.Libchdr.ChdOpenOptions? right) -> bool
+static Moonlark.Libchdr.ChdSha1.FromBytes(System.ReadOnlySpan<byte> bytes) -> Moonlark.Libchdr.ChdSha1
+static Moonlark.Libchdr.ChdSha1.operator !=(Moonlark.Libchdr.ChdSha1 left, Moonlark.Libchdr.ChdSha1 right) -> bool
+static Moonlark.Libchdr.ChdSha1.operator ==(Moonlark.Libchdr.ChdSha1 left, Moonlark.Libchdr.ChdSha1 right) -> bool
+static Moonlark.Libchdr.ChdSha1.TryParse(System.ReadOnlySpan<char> text, out Moonlark.Libchdr.ChdSha1 value) -> bool
+static Moonlark.Libchdr.LibchdrLibrary.BuildInfo.get -> Moonlark.Libchdr.LibchdrBuildInfo!
+static Moonlark.Libchdr.LibchdrLibrary.Load(string! absolutePath) -> void
+~override Moonlark.Libchdr.ChdCdTrack.Equals(object obj) -> bool
+~override Moonlark.Libchdr.ChdCdTrack.ToString() -> string
+~override Moonlark.Libchdr.ChdHeader.Equals(object obj) -> bool
+~override Moonlark.Libchdr.ChdHeader.ToString() -> string
+~override Moonlark.Libchdr.ChdIntegrityResult.Equals(object obj) -> bool
+~override Moonlark.Libchdr.ChdIntegrityResult.ToString() -> string
+~override Moonlark.Libchdr.ChdMetadataInfo.Equals(object obj) -> bool
+~override Moonlark.Libchdr.ChdMetadataInfo.ToString() -> string
+~override Moonlark.Libchdr.ChdSha1.Equals(object obj) -> bool
+static Moonlark.Libchdr.ChdMetadataTag.operator !=(Moonlark.Libchdr.ChdMetadataTag left, Moonlark.Libchdr.ChdMetadataTag right) -> bool
+static Moonlark.Libchdr.ChdMetadataTag.operator ==(Moonlark.Libchdr.ChdMetadataTag left, Moonlark.Libchdr.ChdMetadataTag right) -> bool
+override Moonlark.Libchdr.ChdMetadataTag.GetHashCode() -> int
+~override Moonlark.Libchdr.ChdMetadataTag.Equals(object obj) -> bool
+Moonlark.Libchdr.ChdMetadataTag.Equals(Moonlark.Libchdr.ChdMetadataTag other) -> bool
+Moonlark.Libchdr.ChdMetadataTag.Deconstruct(out uint Value) -> void

@@ -76,12 +76,15 @@ public sealed unsafe class ChdFile : IDisposable
             ChdHeader header = ChdHeaderReader.Snapshot(native);
             ChdMapValidator.Validate(native, context);
             context.ThrowIfFaulted();
+            // libchdr allocates the whole ceiling and its window holds file bytes, so nothing beyond the source helps.
             ulong requested = options?.ReadAheadBytes ?? 0;
-            error = (ChdError)NativeMethods.chd_set_cache_budget(file, checked((nuint)requested));
+            ulong ceiling = requested == 0 ? 0 : Math.Min(requested, (ulong)context.SourceLength);
+            error = (ChdError)NativeMethods.chd_set_cache_budget(file, checked((nuint)ceiling));
             context.ThrowIfFaulted();
-            if (error != ChdError.None) throw new ChdValidationException(error, "set read-ahead budget");
+            // An allocation failure leaves read-ahead off and the file fully usable, as libchdr documents.
+            if (error is not (ChdError.None or ChdError.OutOfMemory)) throw new ChdValidationException(error, "set read-ahead budget");
             ulong actual = NativeMethods.chd_get_cache_budget(file);
-            if (actual > requested) throw new ChdValidationException(ChdError.InvalidState, "read-ahead ceiling");
+            if (actual > ceiling) throw new ChdValidationException(ChdError.InvalidState, "read-ahead ceiling");
             opened = new(handle, header, metadata, actual);
             return true;
         }

@@ -25,6 +25,16 @@ public sealed class NativeVerifyRunTests
         Assert.Contains("$ readelf -h " + verify.Binary, verify.Log.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>The production overload inspects with this machine's RID and really loads the binary, so a synthetic one fails there.</summary>
+    [Fact]
+    public void DefaultHostIsThisMachineAndItsInProcessLoader()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var verify = new VerifyCase();
+        string expected = NativeRids.Host().Value == VerifyCase.Rid ? "Native binary could not be loaded" : "requires its native host";
+        Assert.Contains(expected, verify.RunOnThisHost().Failure.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>The recipe's SOURCE_DATE_EPOCH must be the verified source's commit timestamp; the binary is never inspected otherwise.</summary>
     [Fact]
     public void SourceTimestampMustEqualTheRecipeEpoch()
@@ -102,14 +112,7 @@ internal sealed class VerifyCase : IDisposable
     [UnsupportedOSPlatform("windows")]
     internal Result<string> Run()
     {
-        string manifest = Path.Combine(_root.Path, NativeOutput.ManifestName);
-        File.WriteAllBytes(manifest, JsonFields.Serialize(Manifest, sortKeys: true));
-        string bin = FakeTools.Install(Path.Combine(_root.Path, "fake-tools"), _replies.Values);
-        // The fakes come first; git still resolves from the clean PATH.
-        var environment = new Dictionary<string, string>(TestRepository.CleanEnvironment, StringComparer.Ordinal)
-        {
-            ["PATH"] = bin + Path.PathSeparator + TestRepository.CleanEnvironment["PATH"],
-        };
+        (string manifest, IReadOnlyDictionary<string, string> environment) = Prepare();
         JsonObject embedded = (JsonObject)Manifest["buildInfo"]!.DeepClone();
         var host = new InspectionHost(() => Rid, binary =>
         {
@@ -119,10 +122,32 @@ internal sealed class VerifyCase : IDisposable
         return NativeVerify.Run(_root.Path, manifest, Source, environment, Log, host);
     }
 
+    /// <summary>Verifies through the production overload: this machine's RID and the real in-process loader.</summary>
+    [UnsupportedOSPlatform("windows")]
+    internal Result<string> RunOnThisHost()
+    {
+        (string manifest, IReadOnlyDictionary<string, string> environment) = Prepare();
+        return NativeVerify.Run(_root.Path, manifest, Source, environment, Log);
+    }
+
     public void Dispose()
     {
         Log.Dispose();
         _root.Dispose();
+    }
+
+    /// <summary>Writes the manifest and the fake tools; the fakes come first on PATH and git still resolves from the clean PATH.</summary>
+    [UnsupportedOSPlatform("windows")]
+    private (string Manifest, IReadOnlyDictionary<string, string> Environment) Prepare()
+    {
+        string manifest = Path.Combine(_root.Path, NativeOutput.ManifestName);
+        File.WriteAllBytes(manifest, JsonFields.Serialize(Manifest, sortKeys: true));
+        string bin = FakeTools.Install(Path.Combine(_root.Path, "fake-tools"), _replies.Values);
+        var environment = new Dictionary<string, string>(TestRepository.CleanEnvironment, StringComparer.Ordinal)
+        {
+            ["PATH"] = bin + Path.PathSeparator + TestRepository.CleanEnvironment["PATH"],
+        };
+        return (manifest, environment);
     }
 
     /// <summary>A committed synthetic upstream whose public header declares exactly the allowlisted functions, and its matching pin.</summary>

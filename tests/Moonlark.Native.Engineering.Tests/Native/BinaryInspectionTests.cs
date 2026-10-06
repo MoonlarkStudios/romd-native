@@ -49,6 +49,18 @@ public sealed class BinaryInspectionTests
         Assert.Empty(inspection.Reads);
     }
 
+    /// <summary>The production overload inspects only this machine's RID and loads the binary in-process for real.</summary>
+    [Fact]
+    public void DefaultHostIsThisMachineAndItsInProcessLoader()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        string host = NativeRids.Host().Value;
+        using var foreign = new InspectionCase(NativeRids.Supported.First(rid => rid != host));
+        Assert.Contains("requires its native host", foreign.InspectOnThisHost().Failure.Message, StringComparison.Ordinal);
+        using var native = new InspectionCase(host);
+        Assert.Contains("Native binary could not be loaded", native.InspectOnThisHost().Failure.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>An unresolvable host is reported as is.</summary>
     [Fact]
     public void UnsupportedHostFailureIsReturned()
@@ -179,18 +191,24 @@ internal sealed class InspectionCase : IDisposable
     [UnsupportedOSPlatform("windows")]
     internal Result<Inspection> Inspect(Result<string>? host = null, Result<JsonObject>? buildInfo = null)
     {
-        string bin = FakeTools.Install(Path.Combine(_directory.Path, "tools"), Replies.Values);
         var inspectionHost = new InspectionHost(() => host ?? Rid, binary =>
         {
             _reads.Add(binary);
             return buildInfo ?? Info;
         });
-        return BinaryInspection.Inspect(Binary, Rid, CannedTools.Exports, Info, FakeTools.OnlyOnPath(bin), Log, inspectionHost);
+        return BinaryInspection.Inspect(Binary, Rid, CannedTools.Exports, Info, InstallTools(), Log, inspectionHost);
     }
+
+    /// <summary>Inspects through the production overload: this machine's RID and the real in-process loader.</summary>
+    [UnsupportedOSPlatform("windows")]
+    internal Result<Inspection> InspectOnThisHost() => BinaryInspection.Inspect(Binary, Rid, CannedTools.Exports, Info, InstallTools(), Log);
 
     public void Dispose()
     {
         Log.Dispose();
         _directory.Dispose();
     }
+
+    [UnsupportedOSPlatform("windows")]
+    private IReadOnlyDictionary<string, string> InstallTools() => FakeTools.OnlyOnPath(FakeTools.Install(Path.Combine(_directory.Path, "tools"), Replies.Values));
 }

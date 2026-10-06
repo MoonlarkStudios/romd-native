@@ -95,7 +95,7 @@ internal static unsafe class ChdMapValidator
                 }
             }
         }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+        finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
     }
 
     /// <summary>Follows a self-reference to a hunk that is not one, within the depth bound; every hop is range checked.</summary>

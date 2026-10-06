@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using Moonlark.Libchdr.Internal;
 using Moonlark.Libchdr.Interop;
@@ -15,9 +14,8 @@ public sealed unsafe class ChdFile : IDisposable
     private readonly ChdHeader _header;
     private readonly MetadataEntry[] _metadata;
     private readonly ulong _readAheadBytes;
-    private byte[]? _cache;
     private uint _cachedHunk = uint.MaxValue;
-    private bool _disposed;
+    private int _disposed;
 
     private ChdFile(ChdSafeHandle handle, ChdHeader header, MetadataEntry[] metadata, ulong budget)
     { _handle = handle; _header = header; _metadata = metadata; _readAheadBytes = budget; }
@@ -189,24 +187,31 @@ public sealed unsafe class ChdFile : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         if ((ulong)offset >= _header.LogicalBytes || destination.IsEmpty) return 0;
         int count = (int)Math.Min((ulong)destination.Length, _header.LogicalBytes - (ulong)offset);
-        _cache ??= ArrayPool<byte>.Shared.Rent((int)_header.HunkBytes);
-        int written = 0;
-        while (written < count)
+        bool added = false;
+        try
         {
-            ulong position = checked((ulong)offset + (uint)written);
-            uint hunk = (uint)(position / _header.HunkBytes);
-            int within = (int)(position % _header.HunkBytes);
-            if (_cachedHunk != hunk)
+            // The reference keeps the handle-owned cache out of the pool across both the decode and the copy.
+            _handle.DangerousAddRef(ref added);
+            byte[] cache = _handle.HunkCache((int)_header.HunkBytes);
+            int written = 0;
+            while (written < count)
             {
-                _cachedHunk = uint.MaxValue;
-                ReadHunk(hunk, _cache);
-                _cachedHunk = hunk;
+                ulong position = checked((ulong)offset + (uint)written);
+                uint hunk = (uint)(position / _header.HunkBytes);
+                int within = (int)(position % _header.HunkBytes);
+                if (_cachedHunk != hunk)
+                {
+                    _cachedHunk = uint.MaxValue;
+                    ReadHunk(hunk, cache);
+                    _cachedHunk = hunk;
+                }
+                int take = Math.Min(count - written, (int)_header.HunkBytes - within);
+                cache.AsSpan(within, take).CopyTo(destination[written..]);
+                written += take;
             }
-            int take = Math.Min(count - written, (int)_header.HunkBytes - within);
-            _cache.AsSpan(within, take).CopyTo(destination[written..]);
-            written += take;
+            return written;
         }
-        return written;
+        finally { if (added) _handle.DangerousRelease(); }
     }
 
     /// <summary>Enumerates validated metadata descriptors without allocating per entry.</summary>
@@ -237,15 +242,12 @@ public sealed unsafe class ChdFile : IDisposable
     }
 
     /// <summary>Closes native and owned source resources; subsequent operations throw ObjectDisposedException.</summary>
+    /// <remarks>A Dispose that races an in-flight read, which is unsupported, defers the native close until that read
+    /// returns; a fault from closing the source is then not reported.</remarks>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        try { _handle.Dispose(); }
-        finally
-        {
-            if (_cache is { } buffer) { _cache = null; ArrayPool<byte>.Shared.Return(buffer); }
-        }
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _handle.Dispose();
         _handle.Context.ThrowIfFaulted();
     }
 
@@ -256,7 +258,7 @@ public sealed unsafe class ChdFile : IDisposable
         if ((uint)index >= (uint)_metadata.Length) throw new InvalidOperationException("Metadata enumeration is outside a current entry.");
         return _metadata[index].Info;
     }
-    internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
     /// <inheritdoc cref="Open(string, ChdOpenOptions)"/>
     public static ChdFile Open(string path) => Open(path, null);

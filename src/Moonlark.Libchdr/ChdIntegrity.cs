@@ -29,7 +29,7 @@ public static class ChdIntegrity
             ChdSha1 overall = header.Version < 4 ? raw : HashOverall(file, raw, buffer, cancellationToken);
             return new(raw, header.RawSha1, overall, header.OverallSha1);
         }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+        finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
     }
 
     private static ChdSha1 HashLogical(ChdFile file, ChdHeader header, byte[] buffer, CancellationToken token)

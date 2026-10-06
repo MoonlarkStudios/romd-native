@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -47,6 +48,33 @@ internal static partial class RepositoryCheck
         "        if: github.ref_type == 'tag'",
         "          EXPECTED_TAG: ${{ github.ref_name }}",
     }.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly SearchValues<char> PrintableAsciiOrLineFeed =
+        SearchValues.Create([.. Enumerable.Range(0x20, 0x5F).Select(code => (char)code), '\n']);
+
+    private static readonly FrozenSet<string> ContainerKeys = new[]
+    {
+        "on", "pull_request", "push", "jobs", "foundation", "generation", "source", "preflight",
+        "env", "steps", "with", "workflow_dispatch", "inputs", "tag",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly FrozenSet<string> ApprovedFlowSequences =
+        new[] { "branches: [main]", "tags: ['libchdr-*', 'chdman-*']" }.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, FrozenSet<string>> ExactValues = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["branches"] = ["[main]"],
+        ["tags"] = ["['libchdr-*', 'chdman-*']"],
+        ["runs-on"] = ["ubuntu-24.04", "macos-15"],
+        ["timeout-minutes"] = ["5", "10", "15"],
+        ["CI"] = ["true"],
+        ["persist-credentials"] = ["false"],
+        ["submodules"] = ["true"],
+        ["fetch-depth"] = ["0"],
+        ["global-json-file"] = ["global.json"],
+        ["required"] = ["true"],
+        ["type"] = ["string"],
+    }.ToFrozenDictionary(pair => pair.Key, pair => pair.Value.ToFrozenSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> RequiredPermissionLines =
         new[] { "permissions:", "  contents: read" }.ToFrozenSet(StringComparer.Ordinal);
@@ -115,42 +143,47 @@ internal static partial class RepositoryCheck
         return Check.That(ci.Contains("      - run: " + DriftCheck), "CI must run the generation drift check");
     }
 
-    /// <summary>A deliberately closed skeleton grammar, not a YAML parser: unrecognized forms fail instead of being ignored.</summary>
+    /// <summary>
+    /// A deliberately closed skeleton grammar, not a YAML parser: unrecognized forms fail instead of being ignored.
+    /// Workflows are LF-terminated printable ASCII, so every YAML line break is one checked line; every key has an exact
+    /// value rule; continuation lines and flow collections, which a YAML parser would fold into reviewed values, are refused.
+    /// </summary>
     private static Failure? ValidateWorkflow(string name, string text)
     {
+        int unsupported = text.AsSpan().IndexOfAnyExcept(PrintableAsciiOrLineFeed);
+        if (unsupported >= 0)
+        {
+            int line = text.AsSpan(0, unsupported).Count('\n') + 1;
+            return new Failure($"{name}:{line}: only LF-terminated printable ASCII is supported (found U+{(int)text[unsupported]:X4})");
+        }
         string[] lines = text.Split('\n');
+        (string Key, string Value, int Column)? previous = null;
         for (int index = 0; index < lines.Length; index++)
         {
             string line = lines[index];
             if (line.Trim().Length == 0 || line.TrimStart().StartsWith('#')) continue;
             string at = $"{name}:{index + 1}";
-            if (line.Contains('\t', StringComparison.Ordinal)) return new Failure(at + ": tab indentation is unsupported");
-            string withoutExpression = Expression().Replace(line, "");
-            if (withoutExpression.Contains('{', StringComparison.Ordinal) || withoutExpression.Contains('}', StringComparison.Ordinal))
-                return new Failure(at + ": flow mappings are unsupported");
+            if (Expression().Replace(line, "").AsSpan().IndexOfAny('{', '}') >= 0) return new Failure(at + ": flow mappings are unsupported");
             Match entry = Entry().Match(line);
             if (!entry.Success) return new Failure(at + ": unsupported skeleton YAML form");
-            string key = entry.Groups[1].Value;
-            string value = entry.Groups[2].Value;
+            int column = entry.Groups[1].Length + entry.Groups[2].Length;
+            string key = entry.Groups[3].Value;
+            string value = entry.Groups[4].Value;
             int comment = value.IndexOf(" #", StringComparison.Ordinal);
             value = (comment >= 0 ? value[..comment] : value).Trim();
+            // A line indented beneath a scalar continues that scalar in YAML, smuggling text into a reviewed value.
+            if (previous is { Value.Length: > 0 } scalar && column > scalar.Column)
+                return new Failure(at + ": continuation lines are unsupported");
             if (!WorkflowKeys.Contains(key)) return new Failure($"{at}: unreviewed skeleton key {key}");
             if (value.Length > 0 && "&*!|>".Contains(value[0], StringComparison.Ordinal))
                 return new Failure(at + ": YAML references/tags/block scalars are unsupported");
             if (value.Contains("secrets.", StringComparison.Ordinal)) return new Failure(at + ": source skeleton cannot access secrets");
             if (value.Contains("${{", StringComparison.Ordinal) && key != "EXPECTED_TAG")
                 return new Failure(at + ": expressions are allowed only in the approved tag environment");
-            Failure? keyFailure = key switch
-            {
-                "permissions" => Check.That(value.Length == 0, name + ": permissions must use the explicit read-only mapping"),
-                "contents" => Check.That(value == "read", name + ": contents permission must be read-only"),
-                "run" => Check.That(SourceCommands.Contains(value), at + ": unreviewed source command"),
-                "if" => Check.That(value == "github.ref_type == 'tag'", name + ": unreviewed tag routing"),
-                "EXPECTED_TAG" => Check.That(value is "${{ inputs.tag }}" or "${{ github.ref_name }}",
-                    name + ": tag must come from the dispatch input or actual tag ref"),
-                _ => null,
-            };
-            if (keyFailure is not null) return keyFailure;
+            if (value.AsSpan().IndexOfAny('[', ']') >= 0 && !ApprovedFlowSequences.Contains(key + ": " + value))
+                return new Failure(at + ": flow sequences are unsupported");
+            if (ValidateValue(name, at, key, value, column, previous) is { } invalid) return invalid;
+            previous = (key, value, column);
         }
         if (Check.That(RequiredPermissionLines.IsSubsetOf(ActiveLines(lines)),
             name + ": require active read-only permissions") is { } permissions) return permissions;
@@ -159,12 +192,32 @@ internal static partial class RepositoryCheck
         string[] uses = Uses().Matches(text).Select(match => match.Groups[1].Value).ToArray();
         if (Check.That(uses.Length > 0, name + ": expected pinned checkout") is { } checkout) return checkout;
         foreach (string action in uses)
-        {
-            string[] parts = action.Split('@', 2);
-            if (!Actions.TryGetValue(parts[0], out string? sha) || parts.Length != 2 || parts[1] != sha)
-                return new Failure($"{name}: unreviewed action {action}");
-        }
+            if (ValidateAction(name, action) is { } unreviewed) return unreviewed;
         return null;
+    }
+
+    private static Failure? ValidateValue(string name, string at, string key, string value, int column, (string Key, string Value, int Column)? previous) => key switch
+    {
+        _ when ContainerKeys.Contains(key) => Check.That(value.Length == 0, $"{at}: {key} must be a block mapping"),
+        "name" or "description" => Check.That(value.Length > 0, $"{at}: {key} requires a value"),
+        "permissions" => Check.That(value.Length == 0, name + ": permissions must use the explicit read-only mapping"),
+        "contents" => Check.That(value == "read", name + ": contents permission must be read-only"),
+        "run" => Check.That(SourceCommands.Contains(value), at + ": unreviewed source command"),
+        "uses" => ValidateAction(name, value),
+        // Tag routing belongs only to the tag-check step, so no job (such as the drift check) can be gated off pull requests.
+        "if" => Check.That(value == "github.ref_type == 'tag'", name + ": unreviewed tag routing")
+            ?? Check.That(previous is { Key: "run" } step && step.Value == Engineering + "repo check --tag \"$EXPECTED_TAG\"" && step.Column == column,
+                at + ": tag routing is allowed only on the tag-check step"),
+        "EXPECTED_TAG" => Check.That(value is "${{ inputs.tag }}" or "${{ github.ref_name }}",
+            name + ": tag must come from the dispatch input or actual tag ref"),
+        _ => Check.That(ExactValues.TryGetValue(key, out FrozenSet<string>? allowed) && allowed.Contains(value),
+            $"{at}: unreviewed value for {key}: {value}"),
+    };
+
+    private static Failure? ValidateAction(string name, string action)
+    {
+        string[] parts = action.Split('@', 2);
+        return Check.That(parts.Length == 2 && Actions.TryGetValue(parts[0], out string? sha) && parts[1] == sha, $"{name}: unreviewed action {action}");
     }
 
     private static HashSet<string> ActiveLines(IEnumerable<string> lines) =>
@@ -173,13 +226,13 @@ internal static partial class RepositoryCheck
     [GeneratedRegex(@"\$\{\{[^}\n]+\}\}")]
     private static partial Regex Expression();
 
-    [GeneratedRegex(@"\A\s*(?:-\s+)?([A-Za-z_][A-Za-z0-9_-]*):(.*)\z")]
+    [GeneratedRegex(@"\A( *)(- )?([A-Za-z_][A-Za-z0-9_-]*):(?: (.*))?\z")]
     private static partial Regex Entry();
 
     [GeneratedRegex(@"^\s*[\w-]+:\s*write\s*$", RegexOptions.Multiline)]
     private static partial Regex WritePermission();
 
-    [GeneratedRegex(@"nuget\s+push|gh\s+release|git\s+push")]
+    [GeneratedRegex(@"\bnuget\b[^\n]*\bpush\b|\bgh\b[^\n]*\brelease\b|\bgit\b[^\n]*\bpush\b")]
     private static partial Regex Publishing();
 
     [GeneratedRegex(@"^\s*(?:-\s*)?uses:\s*(\S+)", RegexOptions.Multiline)]

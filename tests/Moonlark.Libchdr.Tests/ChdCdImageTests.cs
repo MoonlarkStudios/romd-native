@@ -24,6 +24,11 @@ public sealed class ChdCdImageTests
         Assert.Equal(ChdCdTrackType.Audio, image.Tracks[1].Type);
         Assert.Equal(4U, image.Tracks[1].PregapFrames);
         Assert.True(image.Tracks[1].PregapStored);
+        Assert.Equal(32UL, image.FrameCount);
+        Assert.Equal(new ChdCdTrackLayout(1, 0, 16, 0), image.TrackLayouts[0]);
+        Assert.Equal(new ChdCdTrackLayout(2, 16, 16, 0), image.TrackLayouts[1]);
+        Assert.Equal(0U, image.TrackLayouts[1].AlignmentFrames);
+        Assert.Equal(16UL * ChdCdImage.FrameBytes, image.TrackLayouts[1].ByteOffset);
         Span<byte> frame = stackalloc byte[2448];
         for (ulong index = 0; index < 32; index++)
         {
@@ -59,27 +64,74 @@ public sealed class ChdCdImageTests
         }
     }
 
-    /// <summary>Track starts round up to four frames while track-local bounds exclude padding.</summary>
+    /// <summary>Track starts round up to four frames, track-local bounds exclude padding, and stored pregap frames use the track layout as MAME reads them.</summary>
     [Fact]
-    public void PaddingAndStoredPregapUseTheirOwnLayouts()
+    public void PaddingAndStoredPregapUseTheTrackLayout()
     {
         byte[] logical = Pattern(8);
         using ChdFile file = Open(logical,
             "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:3 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
-            "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:2 PREGAP:1 PGTYPE:VMODE1 PGSUB:RW_RAW POSTGAP:7");
+            "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:2 PREGAP:1 PGTYPE:VAUDIO PGSUB:NONE POSTGAP:7");
         using ChdCdImage image = ChdCdImage.Open(file, leaveOpen: true);
+        Assert.Equal(8UL, image.FrameCount);
+        Assert.Equal(new ChdCdTrackLayout(1, 0, 3, 1), image.TrackLayouts[0]);
+        Assert.Equal(new ChdCdTrackLayout(2, 4, 2, 2), image.TrackLayouts[1]);
+        Assert.Equal(2U, image.TrackLayouts[1].AlignmentFrames);
         Span<byte> bytes = stackalloc byte[2448];
-        Assert.Equal(2048, image.ReadSector(2, 0, ChdCdSectorFormat.UserData, bytes));
-        Assert.True(bytes[..2048].SequenceEqual(logical.AsSpan(4 * 2448, 2048)));
-        Assert.Equal(96, image.ReadSector(2, 0, ChdCdSectorFormat.Subcode96, bytes));
-        Assert.True(bytes[..96].SequenceEqual(logical.AsSpan(4 * 2448 + 2048, 96)));
-        Assert.Throws<NotSupportedException>(() => image.ReadSector(2, 0, ChdCdSectorFormat.Raw2352, new byte[2352]));
+        Assert.Equal(2352, image.ReadSector(2, 0, ChdCdSectorFormat.Raw2352, bytes));
+        Assert.True(bytes[..2352].SequenceEqual(logical.AsSpan(4 * 2448, 2352)));
         Assert.Equal(2352, image.ReadSector(2, 1, ChdCdSectorFormat.Raw2352, bytes));
         Assert.True(bytes[..2352].SequenceEqual(logical.AsSpan(5 * 2448, 2352)));
         Assert.Throws<ArgumentOutOfRangeException>(() => image.ReadSector(1, 3, ChdCdSectorFormat.Raw2352, new byte[2352]));
         Assert.Throws<ArgumentOutOfRangeException>(() => image.ReadSector(2, 2, ChdCdSectorFormat.Raw2352, new byte[2352]));
         image.ReadFrame(3, bytes);
         Assert.True(bytes.SequenceEqual(logical.AsSpan(3 * 2448, 2448)));
+    }
+
+    /// <summary>A stored pregap declaring a data type other than its track's has no MAME-defined frame layout.</summary>
+    [Fact]
+    public void StoredPregapWithAnotherDataTypeIsRejected()
+    {
+        using ChdFile file = Open(Pattern(8),
+            "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:3 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
+            "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:2 PREGAP:1 PGTYPE:VMODE1 PGSUB:NONE POSTGAP:0");
+        ChdException error = Assert.Throws<ChdException>(() => ChdCdImage.Open(file, leaveOpen: true));
+        Assert.Equal(ChdError.InvalidMetadata, error.Error);
+        Assert.Contains("track 2", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>chdman writes PGSUB:NONE for every pregap and MAME never reads it, so stored pregap frames carry the track's subcode.</summary>
+    [Fact]
+    public void StoredPregapSubcodeFollowsTheTrackLayout()
+    {
+        byte[] logical = Pattern(8);
+        using ChdFile file = Open(logical,
+            "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:3 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
+            "TRACK:2 TYPE:AUDIO SUBTYPE:RW_RAW FRAMES:2 PREGAP:1 PGTYPE:VAUDIO PGSUB:NONE POSTGAP:0");
+        using ChdCdImage image = ChdCdImage.Open(file, leaveOpen: true);
+        Span<byte> subcode = stackalloc byte[96];
+        Assert.Equal(96, image.ReadSector(2, 0, ChdCdSectorFormat.Subcode96, subcode));
+        Assert.True(subcode.SequenceEqual(logical.AsSpan(4 * 2448 + 2352, 96)));
+    }
+
+    /// <summary>A padded track table that disagrees with the stored geometry names both frame counts.</summary>
+    [Fact]
+    public void PaddedTrackTableMismatchNamesBothFrameCounts()
+    {
+        using ChdFile file = Open(Pattern(4), "TRACK:1 TYPE:MODE1 SUBTYPE:NONE FRAMES:5");
+        ChdException error = Assert.Throws<ChdException>(() => ChdCdImage.Open(file, leaveOpen: true));
+        Assert.Equal(ChdError.InvalidData, error.Error);
+        Assert.Contains("covers 8 frames", error.Message, StringComparison.Ordinal);
+        Assert.Contains("stores 4", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Legacy binary CHCD metadata is named as unsupported rather than reported as missing metadata.</summary>
+    [Fact]
+    public void LegacyBinaryCdMetadataIsNamedAsUnsupported()
+    {
+        using ChdFile file = OpenTagged(Pattern(4), [(ChdMetadataTag.FromFourCC("CHCD"), "binary")]);
+        NotSupportedException error = Assert.Throws<NotSupportedException>(() => ChdCdImage.Open(file, leaveOpen: true));
+        Assert.Contains("CHCD", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Cooked semantic subcode follows data bytes, rather than a fixed raw-sector offset.</summary>

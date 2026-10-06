@@ -1,29 +1,38 @@
 namespace Moonlark.Libchdr;
 
 /// <summary>Projects stored CD frames through a validated track table without synthesizing or converting bytes.</summary>
-/// <remarks>This view and its underlying ChdFile are not thread-safe. Stored pregaps are track-local frames;
-/// generated pregaps and postgaps have no stored frame. GD-ROM image projection is not supported.</remarks>
+/// <remarks>This view and its underlying ChdFile are not thread-safe. Stored pregaps are track-local frames with the
+/// track's own layout, as MAME reads them; generated pregaps and postgaps have no stored frame. GD-ROM image
+/// projection and legacy binary CHCD metadata are not supported.</remarks>
 public sealed class ChdCdImage : IDisposable
 {
-    private const int FrameBytes = 2448;
+    /// <summary>The bytes of one stored CD frame: 2,352 data or audio bytes and 96 subcode bytes.</summary>
+    public const int FrameBytes = 2448;
+    private static readonly ChdMetadataTag LegacyBinaryCdTrack = new(0x43484344);
     private readonly ChdFile _file;
     private readonly bool _leaveOpen;
     private readonly ChdCdTrack[] _tracks;
-    private readonly ulong[] _starts;
+    private readonly ChdCdTrackLayout[] _layouts;
     private readonly ulong _frames;
     private bool _disposed;
 
-    private ChdCdImage(ChdFile file, bool leaveOpen, ChdCdTrack[] tracks, ulong[] starts, ulong frames)
-    { _file = file; _leaveOpen = leaveOpen; _tracks = tracks; _starts = starts; _frames = frames; }
+    private ChdCdImage(ChdFile file, bool leaveOpen, ChdCdTrack[] tracks, ChdCdTrackLayout[] layouts, ulong frames)
+    { _file = file; _leaveOpen = leaveOpen; _tracks = tracks; _layouts = layouts; _frames = frames; }
 
     /// <summary>The validated track table, in contiguous one-based track order.</summary>
     public ReadOnlySpan<ChdCdTrack> Tracks { get { ThrowIfDisposed(); return _tracks; } }
+
+    /// <summary>Where each track's stored frames sit in CHD logical storage, in the order of <see cref="Tracks"/>.</summary>
+    public ReadOnlySpan<ChdCdTrackLayout> TrackLayouts { get { ThrowIfDisposed(); return _layouts; } }
+
+    /// <summary>The CHD logical frames, including every track's alignment frames.</summary>
+    public ulong FrameCount { get { ThrowIfDisposed(); return _frames; } }
 
     /// <summary>Creates a CD view after validating metadata, geometry and four-frame track padding.</summary>
     /// <param name="file">The open CHD; a failed open also disposes it unless leaveOpen is true.</param>
     /// <param name="leaveOpen">Whether view disposal or failed view creation preserves the file.</param>
     /// <returns>The validated view.</returns>
-    /// <exception cref="NotSupportedException">The image declares GD-ROM track semantics.</exception>
+    /// <exception cref="NotSupportedException">The image declares GD-ROM track semantics or legacy binary CHCD metadata.</exception>
     /// <exception cref="ChdException">The track table or CD geometry is invalid.</exception>
     public static ChdCdImage Open(ChdFile file, bool leaveOpen = false)
     {
@@ -43,6 +52,8 @@ public sealed class ChdCdImage : IDisposable
             {
                 if (entry.Tag == ChdMetadataTag.GdTrack || entry.Tag == ChdMetadataTag.GdTrackLegacy)
                     throw new NotSupportedException("GD-ROM frame and padding semantics require a separate image projection.");
+                if (entry.Tag == LegacyBinaryCdTrack)
+                    throw new NotSupportedException("Legacy binary CHCD CD metadata is not supported; only CHTR and CHT2 text track metadata is.");
                 int tagIndex = entry.Tag == ChdMetadataTag.CdTrack ? 0 : entry.Tag == ChdMetadataTag.CdTrackV2 ? 1 : -1;
                 if (tagIndex < 0) continue;
                 if (family >= 0 && family != tagIndex)
@@ -52,26 +63,32 @@ public sealed class ChdCdImage : IDisposable
                 if (entry.Length > metadata.Length || !file.TryGetMetadata(entry.Tag, occurrence, metadata, out var info) ||
                     !ChdCdTrack.TryParse(entry.Tag, metadata[..(int)info.Length], out var track) ||
                     indexed[(int)track.Number - 1].Number != 0)
-                    throw new ChdException(ChdError.InvalidMetadata, "CD track metadata is malformed, duplicate, or exceeds its bound");
+                    throw new ChdException(ChdError.InvalidMetadata, $"CD track metadata {entry.Tag} entry {occurrence} is malformed, duplicate, or exceeds its bound");
                 indexed[(int)track.Number - 1] = track;
                 count++;
             }
             if (count == 0) throw new ChdException(ChdError.InvalidMetadata, "CD text track metadata is required");
             var tracks = new ChdCdTrack[count];
-            var starts = new ulong[count];
+            var layouts = new ChdCdTrackLayout[count];
             ulong frames = 0;
             for (int index = 0; index < count; index++)
             {
                 ChdCdTrack track = indexed[index];
                 if (track.Number != index + 1)
-                    throw new ChdException(ChdError.InvalidMetadata, "CD track numbers must be contiguous from one");
+                    throw new ChdException(ChdError.InvalidMetadata, $"CD track numbers must be contiguous from one; track {index + 1} is missing");
+                // PGSUB is not compared: MAME never reads it, and stored pregap frames carry the track's subcode.
+                if (track.PregapStored && track.PregapType != track.Type)
+                    throw new ChdException(ChdError.InvalidMetadata,
+                        $"CD track {track.Number} stores its pregap as {track.PregapType}, not the track type {track.Type}");
                 tracks[index] = track;
-                starts[index] = frames;
-                frames = checked(frames + (((ulong)track.Frames + 3) & ~3UL));
+                uint alignment = (4 - track.Frames % 4) % 4;
+                layouts[index] = new(track.Number, frames, track.Frames, alignment);
+                frames = checked(frames + track.Frames + alignment);
             }
             if (checked(frames * FrameBytes) != header.LogicalBytes)
-                throw new ChdException(ChdError.InvalidData, "The padded CD track table does not match the stored logical frame count");
-            return new(file, leaveOpen, tracks, starts, frames);
+                throw new ChdException(ChdError.InvalidData,
+                    $"The padded CD track table covers {frames} frames, but the CHD stores {header.LogicalBytes / FrameBytes}");
+            return new(file, leaveOpen, tracks, layouts, frames);
         }
         catch
         {
@@ -93,7 +110,7 @@ public sealed class ChdCdImage : IDisposable
         if (chdFrame >= _frames) throw new ArgumentOutOfRangeException(nameof(chdFrame));
         if (destination.Length < FrameBytes) throw new ArgumentException("A stored CD frame requires 2,448 destination bytes.", nameof(destination));
         if (_file.ReadAt(checked((long)(chdFrame * FrameBytes)), destination[..FrameBytes]) != FrameBytes)
-            throw new ChdException(ChdError.ReadError, "read complete stored CD frame");
+            throw new ChdException(ChdError.ReadError, $"read complete stored CD frame {chdFrame}");
     }
 
     /// <summary>Copies an explicit slice of a track-local stored frame without transformations.</summary>
@@ -111,19 +128,17 @@ public sealed class ChdCdImage : IDisposable
         int trackIndex = (int)trackNumber - 1;
         ChdCdTrack track = _tracks[trackIndex];
         if (storedTrackFrame >= track.Frames) throw new ArgumentOutOfRangeException(nameof(storedTrackFrame));
-        bool pregap = track.PregapStored && storedTrackFrame < track.PregapFrames;
-        ChdCdTrackType type = pregap ? track.PregapType!.Value : track.Type;
-        ChdCdSubcodeType subtype = pregap ? track.PregapSubtype : track.Subtype;
-        (int offset, int length, bool xa) = Projection(type, subtype, format);
+        (int offset, int length, bool xa) = Projection(track.Type, track.Subtype, format);
         if (destination.Length < length) throw new ArgumentException($"The requested CD projection requires {length} destination bytes.", nameof(destination));
         Span<byte> frame = stackalloc byte[FrameBytes];
-        ReadFrame(checked(_starts[trackIndex] + storedTrackFrame), frame);
-        if (xa) ValidateXa(frame, type, format);
+        ReadFrame(checked(_layouts[trackIndex].FirstFrame + storedTrackFrame), frame);
+        if (xa) ValidateXa(frame, track.Type, format);
         frame.Slice(offset, length).CopyTo(destination);
         return length;
     }
 
-    /// <summary>Explicitly reverses each 16-bit audio sample's two bytes in place.</summary>
+    /// <summary>Explicitly reverses each 16-bit audio sample's two bytes in place. By chdman's convention (see
+    /// <see cref="ChdCdTrackType.Audio"/>) this converts stored audio to the little-endian order of Redump BINs and WAV, and back.</summary>
     /// <param name="samples">An even-length byte span; stored audio is never swapped implicitly.</param>
     public static void SwapAudioSamples16(Span<byte> samples)
     {

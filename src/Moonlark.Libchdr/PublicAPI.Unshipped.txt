@@ -270,3 +270,19 @@ override Moonlark.Libchdr.ChdMetadataTag.GetHashCode() -> int
 ~override Moonlark.Libchdr.ChdMetadataTag.Equals(object obj) -> bool
 Moonlark.Libchdr.ChdMetadataTag.Equals(Moonlark.Libchdr.ChdMetadataTag other) -> bool
 Moonlark.Libchdr.ChdMetadataTag.Deconstruct(out uint Value) -> void
+const Moonlark.Libchdr.ChdCdImage.FrameBytes = 2448 -> int
+Moonlark.Libchdr.ChdCdImage.FrameCount.get -> ulong
+Moonlark.Libchdr.ChdCdImage.TrackLayouts.get -> System.ReadOnlySpan<Moonlark.Libchdr.ChdCdTrackLayout>
+Moonlark.Libchdr.ChdCdTrackLayout
+Moonlark.Libchdr.ChdCdTrackLayout.AlignmentFrames.get -> uint
+Moonlark.Libchdr.ChdCdTrackLayout.ByteOffset.get -> ulong
+Moonlark.Libchdr.ChdCdTrackLayout.ChdCdTrackLayout() -> void
+Moonlark.Libchdr.ChdCdTrackLayout.Equals(Moonlark.Libchdr.ChdCdTrackLayout other) -> bool
+Moonlark.Libchdr.ChdCdTrackLayout.FirstFrame.get -> ulong
+Moonlark.Libchdr.ChdCdTrackLayout.Frames.get -> uint
+Moonlark.Libchdr.ChdCdTrackLayout.TrackNumber.get -> uint
+override Moonlark.Libchdr.ChdCdTrackLayout.GetHashCode() -> int
+static Moonlark.Libchdr.ChdCdTrackLayout.operator !=(Moonlark.Libchdr.ChdCdTrackLayout left, Moonlark.Libchdr.ChdCdTrackLayout right) -> bool
+static Moonlark.Libchdr.ChdCdTrackLayout.operator ==(Moonlark.Libchdr.ChdCdTrackLayout left, Moonlark.Libchdr.ChdCdTrackLayout right) -> bool
+~override Moonlark.Libchdr.ChdCdTrackLayout.Equals(object obj) -> bool
+~override Moonlark.Libchdr.ChdCdTrackLayout.ToString() -> string

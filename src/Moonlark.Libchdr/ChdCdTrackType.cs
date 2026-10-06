@@ -17,6 +17,9 @@ public enum ChdCdTrackType
     Mode2FormMixed = 5,
     /// <summary>A complete 2,352-byte mode 2 sector; its XA form requires inspection.</summary>
     Mode2Raw = 6,
-    /// <summary>2,352 audio bytes in the CHD's stored byte order.</summary>
+    /// <summary>2,352 audio bytes exactly as CHD stores them, never swapped implicitly. By MAME's convention chdman
+    /// stores CUE BINARY and WAVE audio as big-endian 16-bit samples, so little-endian consumers such as Redump BINs
+    /// need <see cref="ChdCdImage.SwapAudioSamples16"/>. This is a convention, not a guarantee: chdman swaps every CUE
+    /// audio track, so a CUE MOTOROLA (big-endian) source is stored little-endian.</summary>
     Audio = 7
 }

@@ -38,7 +38,7 @@ public sealed class ChdCdTrackTests
         Assert.Equal(ChdMetadataTag.CdTrack, track.MetadataTag);
     }
 
-    /// <summary>Pregap layout is distinct from ordinary track layout; V records actual stored frames.</summary>
+    /// <summary>A V prefix declares stored pregap frames; without it MAME ignores PGTYPE, so neither layout is reported.</summary>
     [Theory]
     [InlineData("VMODE2_FORM2", true)]
     [InlineData("MODE2_FORM2", false)]
@@ -47,12 +47,23 @@ public sealed class ChdCdTrackTests
         byte[] payload = Encoding.ASCII.GetBytes($"TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:16 PREGAP:4 PGTYPE:{pregapType} PGSUB:RW POSTGAP:3");
         Assert.True(ChdCdTrack.TryParse(ChdMetadataTag.CdTrackV2, payload, out var track));
         Assert.Equal(ChdCdTrackType.Audio, track.Type);
-        Assert.Equal(ChdCdTrackType.Mode2Form2, track.PregapType);
-        Assert.Equal(ChdCdSubcodeType.Rw, track.PregapSubtype);
+        Assert.Equal(stored ? ChdCdTrackType.Mode2Form2 : null, track.PregapType);
+        Assert.Equal(stored ? ChdCdSubcodeType.Rw : ChdCdSubcodeType.None, track.PregapSubtype);
         Assert.Equal(4U, track.PregapFrames);
         Assert.Equal(stored, track.PregapStored);
         Assert.Equal(3U, track.PostgapFrames);
         Assert.Equal(0U, track.PadFrames);
+    }
+
+    /// <summary>MAME ignores the V prefix of a zero-length pregap (chdman writes one when INDEX 00 equals INDEX 01), so nothing is stored.</summary>
+    [Fact]
+    public void ZeroLengthPregapIsNeverStored()
+    {
+        Assert.True(ChdCdTrack.TryParse(ChdMetadataTag.CdTrackV2,
+            "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:16 PREGAP:0 PGTYPE:VAUDIO PGSUB:NONE POSTGAP:0"u8, out var track));
+        Assert.False(track.PregapStored);
+        Assert.Null(track.PregapType);
+        Assert.Equal(0U, track.PregapFrames);
     }
 
     /// <summary>Both native GD tags retain padding without making CD image projection claims.</summary>

@@ -162,6 +162,26 @@ public sealed class CoreChecksTests
             Digest.GitBlobSha1(File.ReadAllBytes(path)));
     }
 
+    /// <summary>A missing executable is a reported failure, not an unhandled exception.</summary>
+    [Fact]
+    public void MissingToolIsAFailureNotACrash()
+    {
+        using var log = new StringWriter();
+        Result<string> result = ProcessRunner.Run(["moonlark-definitely-missing-tool", "--version"], TestRepository.CleanEnvironment, log);
+        Assert.Contains("Could not start moonlark-definitely-missing-tool", result.Failure.Message, StringComparison.Ordinal);
+        Assert.Contains("exit=-1", log.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>Nonzero exits fail with the command and output; timeouts kill the process.</summary>
+    [Fact]
+    public void FailedAndTimedOutCommandsAreFailures()
+    {
+        Assert.Contains("Command failed (3)", ProcessRunner.Run(["sh", "-c", "echo out; echo err >&2; exit 3"], TestRepository.CleanEnvironment).Failure.Message, StringComparison.Ordinal);
+        ProcessOutput output = ProcessRunner.Execute(["sh", "-c", "echo out; echo err >&2"], TestRepository.CleanEnvironment);
+        Assert.Equal(("out\n", "err\n"), (output.Stdout, output.Stderr));
+        Assert.Contains("timed out", ProcessRunner.Run(["sleep", "5"], TestRepository.CleanEnvironment, timeout: TimeSpan.FromMilliseconds(200)).Failure.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>Unknown, repeated, valueless and positional arguments fail.</summary>
     [Theory]
     [InlineData("--unknown", "x")]

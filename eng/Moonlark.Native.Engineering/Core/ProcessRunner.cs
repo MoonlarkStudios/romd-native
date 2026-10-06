@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -27,7 +28,20 @@ internal static class ProcessRunner
         foreach (string argument in command.Skip(1)) start.ArgumentList.Add(argument);
         start.Environment.Clear();
         foreach ((string name, string value) in environment) start.Environment[name] = value;
-        using Process process = Process.Start(start) ?? throw new IOException("Could not start " + command[0]);
+        Process? started;
+        try
+        {
+            started = Process.Start(start);
+        }
+        catch (Win32Exception exception)
+        {
+            // A missing tool is an environment failure, reported like a failed command rather than a crash.
+            var missing = new ProcessOutput(-1, "", $"Could not start {command[0]}: {exception.Message}", false);
+            log?.Write(missing.Combined + "\nexit=-1\n");
+            log?.Flush();
+            return missing;
+        }
+        using Process process = started ?? throw new IOException("Could not start " + command[0]);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync();
         Task<string> stderr = process.StandardError.ReadToEndAsync();
         bool exited = process.WaitForExit(timeout ?? Timeout.InfiniteTimeSpan);

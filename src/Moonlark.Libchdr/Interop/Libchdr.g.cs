@@ -234,103 +234,66 @@ internal partial struct _chd_verify_result
 
 internal static unsafe partial class NativeMethods
 {
-    [LibraryImport("moonlark_chdr")]
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_open_core_file_callbacks([NativeTypeName("const core_file_callbacks *")] core_file_callbacks* callbacks, [NativeTypeName("const void *")] void* user_data, int mode, chd_file* parent, chd_file** chd);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_open_core_file_callbacks([NativeTypeName("const core_file_callbacks *")] core_file_callbacks* callbacks, [NativeTypeName("const void *")] void* user_data, int mode, chd_file* parent, chd_file** chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_open_core_file(core_file* file, int mode, chd_file* parent, chd_file** chd);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_open_core_file(core_file* file, int mode, chd_file* parent, chd_file** chd);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_open_file([NativeTypeName("FILE *")] void* file, int mode, chd_file* parent, chd_file** chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_open([NativeTypeName("const char *")] sbyte* filename, int mode, chd_file* parent, chd_file** chd);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_open_file([NativeTypeName("FILE *")] void* file, int mode, chd_file* parent, chd_file** chd);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_precache(chd_file* chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_set_cache_budget(chd_file* chd, [NativeTypeName("size_t")] nuint bytes);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_open([NativeTypeName("const char *")] sbyte* filename, int mode, chd_file* parent, chd_file** chd);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_precache(chd_file* chd);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_set_cache_budget(chd_file* chd, [NativeTypeName("size_t")] nuint bytes);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     [return: NativeTypeName("size_t")]
-    internal static partial nuint chd_get_cache_budget([NativeTypeName("const chd_file *")] chd_file* chd);
+    public static extern nuint chd_get_cache_budget([NativeTypeName("const chd_file *")] chd_file* chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern void chd_get_cache_stats([NativeTypeName("const chd_file *")] chd_file* chd, [NativeTypeName("uint64_t *")] ulong* hits, [NativeTypeName("uint64_t *")] ulong* misses);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial void chd_get_cache_stats([NativeTypeName("const chd_file *")] chd_file* chd, [NativeTypeName("uint64_t *")] ulong* hits, [NativeTypeName("uint64_t *")] ulong* misses);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern void chd_close(chd_file* chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern core_file* chd_core_file(chd_file* chd);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial void chd_close(chd_file* chd);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial core_file* chd_core_file(chd_file* chd);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     [return: NativeTypeName("const char *")]
-    internal static partial sbyte* chd_error_string(chd_error err);
+    public static extern sbyte* chd_error_string(chd_error err);
 
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     [return: NativeTypeName("const chd_header *")]
-    internal static partial chd_header* chd_get_header(chd_file* chd);
+    public static extern chd_header* chd_get_header(chd_file* chd);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_read_header_core_file_callbacks([NativeTypeName("const core_file_callbacks *")] core_file_callbacks* callback, [NativeTypeName("const void *")] void* user_data, chd_header* header);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_read_header_core_file_callbacks([NativeTypeName("const core_file_callbacks *")] core_file_callbacks* callback, [NativeTypeName("const void *")] void* user_data, chd_header* header);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_read_header_core_file(core_file* file, chd_header* header);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_read_header_file([NativeTypeName("FILE *")] void* file, chd_header* header);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_read_header_core_file(core_file* file, chd_header* header);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_read_header([NativeTypeName("const char *")] sbyte* filename, chd_header* header);
 
-    [LibraryImport("moonlark_chdr")]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_read(chd_file* chd, [NativeTypeName("uint32_t")] uint hunknum, void* buffer);
 
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_read_header_file([NativeTypeName("FILE *")] void* file, chd_header* header);
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    public static extern chd_error chd_get_metadata(chd_file* chd, [NativeTypeName("uint32_t")] uint searchtag, [NativeTypeName("uint32_t")] uint searchindex, void* output, [NativeTypeName("uint32_t")] uint outputlen, [NativeTypeName("uint32_t *")] uint* resultlen, [NativeTypeName("uint32_t *")] uint* resulttag, [NativeTypeName("uint8_t *")] byte* resultflags);
 
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_read_header([NativeTypeName("const char *")] sbyte* filename, chd_header* header);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_read(chd_file* chd, [NativeTypeName("uint32_t")] uint hunknum, void* buffer);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static partial chd_error chd_get_metadata(chd_file* chd, [NativeTypeName("uint32_t")] uint searchtag, [NativeTypeName("uint32_t")] uint searchindex, void* output, [NativeTypeName("uint32_t")] uint outputlen, [NativeTypeName("uint32_t *")] uint* resultlen, [NativeTypeName("uint32_t *")] uint* resulttag, [NativeTypeName("uint8_t *")] byte* resultflags);
-
-    [LibraryImport("moonlark_chdr")]
-
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    [DllImport("moonlark_chdr", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     [return: NativeTypeName("const char *")]
-    internal static partial sbyte* moonlark_chdr_build_info();
+    public static extern sbyte* moonlark_chdr_build_info();
 }
 
 /// <summary>Defines the type of a member as it was used in the native signature.</summary>

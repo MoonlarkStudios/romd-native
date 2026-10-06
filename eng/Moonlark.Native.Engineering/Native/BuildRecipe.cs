@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Moonlark.Native.Engineering.Core;
 
 namespace Moonlark.Native.Engineering.Native;
@@ -9,7 +10,7 @@ namespace Moonlark.Native.Engineering.Native;
 /// The location-independent build identity. buildId is embedded in the binary, so the recipe holds only
 /// effective settings, tool identities and repository-relative input digests, never a local path.
 /// </summary>
-internal static class BuildRecipe
+internal static partial class BuildRecipe
 {
     internal static ImmutableArray<string> NativeInputs { get; } =
     [
@@ -119,9 +120,18 @@ internal static class BuildRecipe
             .SelectMany(path => new[] { Path.TrimEndingDirectorySeparator(path), Path.TrimEndingDirectorySeparator(ArtifactsPath.Resolve(path)) })
             .Distinct(StringComparer.Ordinal)];
         StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        string? leak = Strings(recipe).FirstOrDefault(text => paths.Any(path => text.Contains(path, comparison)));
+        // Unknown host paths (package-manager prefixes, TMPDIR, SDKs) fail too: any rooted path token, including
+        // flag-embedded ones such as -I/opt/x. MSVC options start with '/', so Windows recipes check drive and UNC roots.
+        Regex rooted = OperatingSystem.IsWindows() ? WindowsRootedPath() : UnixRootedPath();
+        string? leak = Strings(recipe).FirstOrDefault(text => paths.Any(path => text.Contains(path, comparison)) || rooted.IsMatch(text));
         return leak is null ? null : new Failure("Build recipe is location-dependent: " + leak);
     }
+
+    [GeneratedRegex(@"(?:^|[\s=;,""'()]|-[A-Za-z])(?:/|~/)")]
+    private static partial Regex UnixRootedPath();
+
+    [GeneratedRegex(@"(?:^|[\s=;,:""'()]|[-/][A-Za-z])(?:[A-Za-z]:[\\/]|\\\\)")]
+    private static partial Regex WindowsRootedPath();
 
     private static bool IsSelected(CacheEntry entry) =>
         ExactSettings.Contains(entry.Name) || (!ExcludedFamilyTypes.Contains(entry.Type)

@@ -46,6 +46,37 @@ public sealed class BuildRecipeTests
         Assert.Contains("location-dependent", BuildRecipe.RejectLocations(recipe, [root.Path])?.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>Host paths the build never named (package-manager prefixes, TMPDIR, SDKs) still fail as rooted path tokens.</summary>
+    [Theory]
+    [InlineData("-I/opt/homebrew/include")]
+    [InlineData("/private/var/folders/x/T")]
+    [InlineData("--sysroot=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")]
+    [InlineData("-Wl,-rpath,/usr/local/lib")]
+    [InlineData("~/toolchains/clang")]
+    public void UnknownRootedHostPathsFail(string value)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var root = new NativeRoot();
+        JsonObject configuration = NativeRoot.Configuration(NativeRoot.Rid);
+        configuration["CMAKE_C_FLAGS"] = value;
+        JsonObject recipe = BuildRecipe.Create(root.Authority, NativeRoot.Rid, configuration, NativeRoot.Toolchain(), 12345, BuildRecipe.InputDigests(root.Path).Value);
+        Assert.Contains("location-dependent", BuildRecipe.RejectLocations(recipe, [root.Path])?.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Repository-relative paths, the upstream URL and tool banners are not locations.</summary>
+    [Theory]
+    [InlineData("-Wl,-dead_strip")]
+    [InlineData("CMake suite maintained and supported by Kitware (kitware.com/cmake).")]
+    [InlineData("https://github.com/rtissera/libchdr")]
+    public void LocationIndependentValuesPass(string value)
+    {
+        using var root = new NativeRoot();
+        JsonObject configuration = NativeRoot.Configuration(NativeRoot.Rid);
+        configuration["CMAKE_C_FLAGS"] = value;
+        JsonObject recipe = BuildRecipe.Create(root.Authority, NativeRoot.Rid, configuration, NativeRoot.Toolchain(), 12345, BuildRecipe.InputDigests(root.Path).Value);
+        Assert.Null(BuildRecipe.RejectLocations(recipe, [root.Path]));
+    }
+
     /// <summary>Recipe inputs are sorted repository-relative paths covering CMake, presets, shim, probe and the engineering code.</summary>
     [Fact]
     public void RecipeInputsAreSortedRepositoryRelativeDigests()

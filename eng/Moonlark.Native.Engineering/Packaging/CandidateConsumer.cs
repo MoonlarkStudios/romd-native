@@ -58,7 +58,8 @@ internal static class CandidateConsumer
                 item => Convert.ToBase64String(SHA512.HashData(File.ReadAllBytes(item.Path))), StringComparer.Ordinal);
             string assets = Path.Combine(consumer, "obj", "project.assets.json");
             if (ConsumerEvidence.VerifyAssets(JsonFields.ReadObject(assets, "Consumer assets").Value, receipt.Version, hashes) is { } assetsFailure) return assetsFailure;
-            VerifyLock(Path.Combine(consumer, "packages.lock.json"), receipt.Version, hashes);
+            if (ConsumerEvidence.VerifyLock(JsonFields.ReadObject(Path.Combine(consumer, "packages.lock.json"), "Consumer lock").Value,
+                receipt.Version, rid, hashes) is { } lockFailure) return lockFailure;
             string build = Path.Combine(output.Value, "build");
             session.Run("consumer-build", consumer, "dotnet", "build", project, "-c", "Release", "--no-restore", "--output", build, "-warnaserror");
             JsonObject built = RunPositive(session, "framework-run", build, fixture, receipt.Version, authority.Pin.Commit, native.BuildId);
@@ -164,12 +165,12 @@ internal static class CandidateConsumer
             "--packages", packages, "-p:RestoreFallbackFolders=", "-p:RestoreAdditionalProjectSources=", .. lockArgument]);
     }
 
-    private static string WriteProject(string directory, string version, string rid)
+    internal static string WriteProject(string directory, string version, string rid)
     {
         string path = Path.Combine(directory, ProjectName + ".csproj");
         new XDocument(new XElement("Project", new XAttribute("Sdk", "Microsoft.NET.Sdk"),
             new XElement("PropertyGroup", new XElement("OutputType", "Exe"), new XElement("TargetFramework", "net10.0"),
-                new XElement("RuntimeIdentifiers", rid), new XElement("UseAppHost", "false"), new XElement("SelfContained", "false"),
+                new XElement("RuntimeIdentifier", rid), new XElement("UseAppHost", "false"), new XElement("SelfContained", "false"),
                 new XElement("ImplicitUsings", "enable"), new XElement("Nullable", "enable"), new XElement("TreatWarningsAsErrors", "true"),
                 new XElement("RestorePackagesWithLockFile", "true"), new XElement("ManagePackageVersionsCentrally", "false")),
             new XElement("ItemGroup", new XElement("PackageReference", new XAttribute("Include", "Moonlark.Libchdr"), new XAttribute("Version", "[" + version + "]"))))).Save(path);
@@ -211,22 +212,6 @@ internal static class CandidateConsumer
     private static string[] CurrentNativePaths(string directory, string rid) =>
         new[] { Path.Combine(directory, NativeRids.LibraryFileName(rid)), Path.Combine(directory, "runtimes", rid, "native", NativeRids.LibraryFileName(rid)) }
             .Where(File.Exists).ToArray();
-
-    private static void VerifyLock(string path, string version, IReadOnlyDictionary<string, string> hashes)
-    {
-        JsonObject document = JsonFields.ReadObject(path, "Consumer lock").Value;
-        JsonObject targets = document["dependencies"]!.AsObject();
-        if (targets.Count == 0) throw new InvalidDataException("Consumer lock has no targets");
-        foreach (JsonNode? target in targets.Select(pair => pair.Value))
-        {
-            JsonObject packages = target!.AsObject();
-            if (packages.Count != 2) throw new InvalidDataException("Consumer lock contains unexpected dependencies");
-            foreach ((string id, string hash) in hashes)
-                if (packages[id] is not JsonObject item || (string?)item["resolved"] != version || (string?)item["contentHash"] != hash
-                    || (string?)item["type"] != (id == "Moonlark.Libchdr" ? "Direct" : "Transitive"))
-                    throw new InvalidDataException("Consumer lock family/hash/type mismatch");
-        }
-    }
 
     private static JsonObject RestoreNegative(string root, string output, CandidateReceipt receipt, string rid,
         IReadOnlyDictionary<string, string> environment, TextWriter? log, bool wrongVersion)

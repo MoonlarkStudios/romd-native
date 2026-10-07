@@ -62,4 +62,68 @@ public sealed class ConsumerEvidenceTests
         if (field == "IntegrityVerified") result.Remove(field); else result["BuildInfo"]!.AsObject().Remove(field);
         Assert.NotNull(ConsumerEvidence.VerifyResult(result, Version, new string('a', 40), new string('b', 64)));
     }
+    /// <summary>NuGet's RID group is a delta over the complete framework group, not a second full inventory.</summary>
+    [Theory]
+    [InlineData("native")]
+    [InlineData("empty")]
+    [InlineData("full")]
+    public void ExactLockDeltaPasses(string shape)
+    {
+        JsonObject document = Lock();
+        JsonObject groups = document["dependencies"]!.AsObject();
+        if (shape == "empty") groups["net10.0/osx-arm64"] = new JsonObject();
+        if (shape == "full") groups["net10.0/osx-arm64"] = groups["net10.0"]!.DeepClone();
+        Assert.Null(ConsumerEvidence.VerifyLock(document, Version, "osx-arm64", Hashes()));
+    }
+
+    /// <summary>Only the exact framework and requested RID can preserve the two family's verified identities.</summary>
+    [Theory]
+    [InlineData("missing-base")]
+    [InlineData("missing-rid")]
+    [InlineData("unknown-group")]
+    [InlineData("wrong-rid")]
+    [InlineData("base-extra")]
+    [InlineData("base-missing")]
+    [InlineData("base-hash")]
+    [InlineData("base-version")]
+    [InlineData("base-type")]
+    [InlineData("rid-extra")]
+    [InlineData("rid-hash")]
+    [InlineData("rid-version")]
+    [InlineData("rid-type")]
+    public void InvalidLockDeltaFails(string change)
+    {
+        JsonObject document = Lock();
+        JsonObject groups = document["dependencies"]!.AsObject();
+        JsonObject basis = groups["net10.0"]!.AsObject(), delta = groups["net10.0/osx-arm64"]!.AsObject();
+        switch (change)
+        {
+            case "missing-base": groups.Remove("net10.0"); break;
+            case "missing-rid": groups.Remove("net10.0/osx-arm64"); break;
+            case "unknown-group": groups["net9.0"] = basis.DeepClone(); break;
+            case "wrong-rid": groups.Remove("net10.0/osx-arm64"); groups["net10.0/linux-x64"] = basis.DeepClone(); break;
+            case "base-extra": basis["Other"] = basis[Ids[0]]!.DeepClone(); break;
+            case "base-missing": basis.Remove(Ids[0]); break;
+            case "base-hash": basis[Ids[0]]!["contentHash"] = "wrong"; break;
+            case "base-version": basis[Ids[0]]!["resolved"] = "9.0.0"; break;
+            case "base-type": basis[Ids[0]]!["type"] = "Project"; break;
+            case "rid-extra": delta["Other"] = delta[Ids[1]]!.DeepClone(); break;
+            case "rid-hash": delta[Ids[1]]!["contentHash"] = "wrong"; break;
+            case "rid-version": delta[Ids[1]]!["resolved"] = "9.0.0"; break;
+            case "rid-type": delta[Ids[1]]!["type"] = "Project"; break;
+            default: throw new InvalidOperationException(change);
+        }
+        Assert.NotNull(ConsumerEvidence.VerifyLock(document, Version, "osx-arm64", Hashes()));
+    }
+
+    private static JsonObject Lock()
+    {
+        var basis = new JsonObject(Ids.Select(id => KeyValuePair.Create(id, (JsonNode?)new JsonObject
+        { ["type"] = id == Ids[0] ? "Direct" : "Transitive", ["resolved"] = Version, ["contentHash"] = Hashes()[id] })));
+        basis[Ids[0]]!["requested"] = "[" + Version + ", " + Version + "]";
+        basis[Ids[0]]!["dependencies"] = new JsonObject { [Ids[1]] = "[" + Version + "]" };
+        return new JsonObject { ["version"] = 1, ["dependencies"] = new JsonObject
+        { ["net10.0"] = basis, ["net10.0/osx-arm64"] = new JsonObject { [Ids[1]] = basis[Ids[1]]!.DeepClone() } } };
+    }
+
 }

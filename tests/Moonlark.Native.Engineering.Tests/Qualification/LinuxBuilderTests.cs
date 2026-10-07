@@ -53,17 +53,23 @@ public sealed class LinuxBuilderTests
         if (OperatingSystem.IsWindows()) return;
         using var directory = new TemporaryDirectory();
         string removed = Path.Combine(directory.Path, "removed");
-        string script = "#!/bin/sh\nif [ \"$1\" = rm ]; then printf '%s' \"$3\" > " + FakeTools.Quote(removed) + "; exit 0; fi\n"
+        string script = "#!/bin/sh\nif [ \"$1\" = rm ]; then\n"
+            + "  if [ \"$#\" != 3 ] || [ \"$2\" != --force ]; then exit 97; fi\n"
+            + "  printf '%s' \"$3\" > " + FakeTools.Quote(removed) + "; exit 0; fi\n"
             + "if [ \"$1\" != run ] || [ \"$2\" != --cidfile ] || [ \"$4\" != --name ]; then exit 98; fi\n"
-            + "printf '%s' \"$5\" > " + FakeTools.Quote(Path.Combine(directory.Path, "started")) + "\n"
             + (timeout ? "/bin/sleep 30\n" : "exit 95\n");
         FakeTools.WriteExecutable(Path.Combine(directory.Path, "docker"), script);
-        var result = LinuxBuilder.RunContainer(["synthetic-image"], directory.Path, FakeTools.OnlyOnPath(directory.Path), TextWriter.Null, TimeSpan.FromMilliseconds(300));
+        using var log = new StringWriter();
+        var result = LinuxBuilder.RunContainer(["synthetic-image"], directory.Path, FakeTools.OnlyOnPath(directory.Path), log,
+            timeout ? TimeSpan.FromMilliseconds(300) : TimeSpan.FromSeconds(30));
         Assert.False(result.Succeeded);
         Assert.Contains(timeout ? "timed out" : "95", result.Failure.Message, StringComparison.Ordinal);
+        // The child may time out before initializing any marker; the parent records its target before launch.
+        string run = Assert.Single(log.ToString().Split('\n'), line => line.StartsWith("$ docker run ", StringComparison.Ordinal));
+        string name = run.Split(" --name ", StringSplitOptions.None)[1].Split(' ')[0];
+        Assert.Matches("^moonlark-qualification-[a-f0-9]{32}$", name);
         Assert.True(File.Exists(removed));
-        Assert.Equal(File.ReadAllText(Path.Combine(directory.Path, "started")), File.ReadAllText(removed));
-        Assert.StartsWith("moonlark-qualification-", File.ReadAllText(removed), StringComparison.Ordinal);
+        Assert.Equal(name, File.ReadAllText(removed));
     }
     /// <summary>A preexisting cache symlink must be rejected before a writable container mount is constructed.</summary>
     [Fact]

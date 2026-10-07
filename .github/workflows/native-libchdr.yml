@@ -1,19 +1,101 @@
-name: Libchdr source preflight
+name: Libchdr Linux evidence
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, refactor/csharp-engineering]
 permissions:
   contents: read
 jobs:
-  source:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+  fixtures:
+    runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true
+          fetch-depth: 0
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
       - run: dotnet restore Moonlark.Native.slnx --locked-mode
       - run: dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
       - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- qualification fixtures
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libchdr-synthetic-fixtures
+          path: artifacts/fixtures/libchdr-final
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-fixture-logs
+          path: artifacts/qualification/fixtures/*.log
+          retention-days: 7
+  linux-x64:
+    needs: fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-synthetic-fixtures
+          path: artifacts/fixtures/libchdr-final
+      - run: dotnet restore Moonlark.Native.slnx --locked-mode
+      - run: dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
+      - run: dotnet tool restore
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- generate --check
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- qualification container --rid linux-x64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-linux-x64-evidence
+          path: |
+            artifacts/qualification/linux-x64/*.log
+            artifacts/qualification/linux-x64/builder.json
+            artifacts/qualification/linux-x64/checkout/artifacts/qualification/linux-x64
+            artifacts/qualification/linux-x64/checkout/artifacts/native/libchdr
+          retention-days: 7
+  linux-arm64:
+    needs: fixtures
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-synthetic-fixtures
+          path: artifacts/fixtures/libchdr-final
+      - run: dotnet restore Moonlark.Native.slnx --locked-mode
+      - run: dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
+      - run: dotnet tool restore
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- generate --check
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- qualification container --rid linux-arm64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-linux-arm64-evidence
+          path: |
+            artifacts/qualification/linux-arm64/*.log
+            artifacts/qualification/linux-arm64/builder.json
+            artifacts/qualification/linux-arm64/checkout/artifacts/qualification/linux-arm64
+            artifacts/qualification/linux-arm64/checkout/artifacts/native/libchdr
+          retention-days: 7

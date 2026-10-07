@@ -11,6 +11,6 @@ internal static class RepositoryCommand
         Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--tag"]);
         if (!parsed.Succeeded) return context.Report(parsed.Failure, "");
         return context.Report(RepositoryCheck.Run(context.Root, parsed.Value.Option("--tag")),
-            "family versions, upstream identities, safety/RID contract and source-only CI");
+            "family versions, upstream identities, safety/RID contract and read-only CI contracts");
     }
 }

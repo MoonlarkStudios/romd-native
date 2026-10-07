@@ -1,12 +1,13 @@
 using System.Buffers;
 using System.Collections.Frozen;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Moonlark.Native.Engineering.Core;
 
 namespace Moonlark.Native.Engineering.Repository;
 
-/// <summary>Offline checks for family identity and the closed, non-publishing CI skeleton.</summary>
+/// <summary>Offline checks for family identity and the closed, read-only CI contracts.</summary>
 internal static partial class RepositoryCheck
 {
     internal static readonly FrozenDictionary<string, string> Actions = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -33,7 +34,7 @@ internal static partial class RepositoryCheck
     {
         "dotnet restore Moonlark.Native.slnx --locked-mode",
         "dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror",
-        "dotnet test Moonlark.Native.slnx -c Release --no-build --no-restore",
+        "dotnet test tests/Moonlark.Native.Engineering.Tests -c Release --no-build --no-restore",
         "dotnet tool restore",
         Engineering + "repo check",
         Engineering + "repo check --tag \"$EXPECTED_TAG\"",
@@ -156,6 +157,11 @@ internal static partial class RepositoryCheck
             int line = text.AsSpan(0, unsupported).Count('\n') + 1;
             return new Failure($"{name}:{line}: only LF-terminated printable ASCII is supported (found U+{(int)text[unsupported]:X4})");
         }
+        // This pipeline's jobs, artifact transfer and runner/RID pairs are reviewed as one exact contract.
+        // Keep the general source-workflow grammar closed; any Linux workflow edit requires updating this pin.
+        if (name == "native-libchdr.yml")
+            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "26956e246131b66a5d39d0bac431506902c0bf68ae6c27ee89898cc10214de84",
+                "native-libchdr.yml differs from the reviewed read-only Linux workflow");
         string[] lines = text.Split('\n');
         (string Key, string Value, int Column)? previous = null;
         for (int index = 0; index < lines.Length; index++)

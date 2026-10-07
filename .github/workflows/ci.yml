@@ -28,7 +28,7 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           EXPECTED_TAG: ${{ github.ref_name }}
-      - run: dotnet test Moonlark.Native.slnx -c Release --no-build --no-restore
+      - run: dotnet test tests/Moonlark.Native.Engineering.Tests -c Release --no-build --no-restore
   generation:
     runs-on: macos-15
     timeout-minutes: 15

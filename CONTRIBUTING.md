@@ -24,10 +24,18 @@ written note. The first release has no previous package baseline; subsequent
 releases must set PackageValidationBaselineVersion to the previous published
 release. Do not suppress diagnostics or alter thresholds to pass.
 
-CI and release configuration are primary-owned. The initial workflows validate
-source conventions and generated-binding drift only, restoring the pinned
-ClangSharp tool for the drift check, and have contents:read permissions. The
-`repo check` lint accepts only a closed, LF-terminated ASCII workflow grammar
-with exact reviewed keys, values, commands and SHA-pinned actions. They cannot publish
-packages, release assets, tags, attestations or binary PRs. An approved release
-pipeline must add those separately with explicit approval and least privilege.
+CI and release configuration are primary-owned. Foundation CI checks managed
+engineering tests and binding drift. The separate Linux workflow produces
+synthetic fixtures on macOS ARM64, then runs native builds and the complete
+libchdr/engineering suites on standard Linux x64 and ARM64 runners. Windows
+qualification remains manual or release-gated; it is not in per-change CI.
+See [Linux qualification](docs/linux-qualification.md) for commands, evidence
+boundaries and builder prerequisites.
+
+All workflows retain contents:read permissions and SHA-pinned actions. The
+source workflows use the closed ASCII/LF grammar in `repo check`; the Linux
+workflow is pinned by its complete file digest so its runner/RID pairs,
+dependencies, commands and temporary artifact transfer are reviewed together.
+Changing that pipeline requires updating its digest and mutation tests. These
+workflows cannot publish packages, release assets, tags, attestations or binary
+PRs. A publishing pipeline requires separate explicit approval and least privilege.

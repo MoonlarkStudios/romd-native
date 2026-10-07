@@ -20,6 +20,10 @@ dotnet tool restore
 dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- generate --check
 ```
 
+The full libchdr suite requires verified native outputs and generated synthetic
+fixtures. The [Linux qualification workflow](docs/linux-qualification.md) supplies
+both on fresh CI runners; a plain source checkout cannot pass that suite.
+
 All engineering tooling is C# in `eng/Moonlark.Native.Engineering`, tested by
 `tests/Moonlark.Native.Engineering.Tests`; there are no Python scripts.
 `generate --check` fails when the committed bindings differ from the pinned

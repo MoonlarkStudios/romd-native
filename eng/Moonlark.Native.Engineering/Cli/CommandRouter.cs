@@ -24,6 +24,8 @@ internal static class CommandRouter
         ["fixtures generate"] = FixturesCommand.Generate,
         ["fixtures verify"] = FixturesCommand.Verify,
         ["qualification linux"] = QualificationCommand.Linux,
+        ["qualification container"] = QualificationCommand.Container,
+        ["qualification fixtures"] = QualificationCommand.Fixtures,
     };
 
     internal static int Run(IReadOnlyList<string> arguments, TextWriter output, TextWriter error)

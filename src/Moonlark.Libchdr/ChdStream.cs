@@ -1,7 +1,8 @@
 namespace Moonlark.Libchdr;
 
 /// <summary>A read-only seekable synchronous stream over a CHD's logical bytes.</summary>
-/// <remarks>The stream and decoder share a hunk cache and are not thread-safe.
+/// <remarks>The stream and decoder share a hunk cache and are not thread-safe: a read that overlaps another read of the
+/// decoder throws <see cref="InvalidOperationException"/>.
 /// Native I/O is synchronous, and the asynchronous read methods throw <see cref="NotSupportedException"/> even
 /// though <see cref="CanRead"/> is true, so asynchronous consumers such as <c>CopyToAsync</c> or
 /// <c>StreamReader.ReadToEndAsync</c> fail. Use the synchronous methods, on a worker thread if needed.</remarks>

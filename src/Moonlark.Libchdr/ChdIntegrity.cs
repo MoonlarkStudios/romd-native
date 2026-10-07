@@ -11,12 +11,14 @@ public static class ChdIntegrity
     /// <summary>Verifies a complete synchronous decode using CHD's hash rules.</summary>
     /// <param name="file">The decoder, which remains open.</param>
     /// <returns>Computed and stored hashes, including explicit absent/mismatching status.</returns>
+    /// <exception cref="InvalidOperationException">Another read of the file is in progress.</exception>
     public static ChdIntegrityResult Verify(ChdFile file) => Verify(file, CancellationToken.None);
 
     /// <summary>Verifies a complete decode, checking cancellation between hunks and metadata chunks.</summary>
     /// <param name="file">The decoder, which remains open.</param>
     /// <param name="cancellationToken">Cancellation between synchronous native operations.</param>
     /// <returns>Computed and stored hashes; a mismatch or absence does not report success.</returns>
+    /// <exception cref="InvalidOperationException">Another read of the file is in progress.</exception>
     public static ChdIntegrityResult Verify(ChdFile file, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(file);

@@ -6,7 +6,9 @@ namespace Moonlark.Libchdr;
 
 /// <summary>A synchronous, read-only CHD decoder with owned native lifetime.</summary>
 /// <remarks>Instances and their streams/views are not thread-safe. Use independent handles
-/// for concurrent decodes. Untrusted containers require a separate resource-limited process.
+/// for concurrent decodes: a read that overlaps another read of the same instance throws
+/// <see cref="InvalidOperationException"/> rather than entering native code twice. Untrusted containers require a
+/// separate resource-limited process.
 /// Opening validates the codecs and the whole hunk map, so the source's bytes must not change while the file is open.</remarks>
 public sealed unsafe class ChdFile : IDisposable
 {
@@ -16,6 +18,7 @@ public sealed unsafe class ChdFile : IDisposable
     private readonly ulong _readAheadBytes;
     private uint _cachedHunk = uint.MaxValue;
     private int _disposed;
+    private int _reading;
 
     private ChdFile(ChdSafeHandle handle, ChdHeader header, MetadataEntry[] metadata, ulong budget)
     { _handle = handle; _header = header; _metadata = metadata; _readAheadBytes = budget; }
@@ -157,11 +160,19 @@ public sealed unsafe class ChdFile : IDisposable
     /// <param name="index">The zero-based hunk index.</param>
     /// <param name="destination">At least HunkBytes of readable memory, aligned to two bytes.
     /// LZMA reads it back as a dictionary; do not expose it until decoding finishes.</param>
+    /// <exception cref="InvalidOperationException">Another read of this instance is in progress.</exception>
     public void ReadHunk(uint index, Span<byte> destination)
     {
         ThrowIfDisposed();
         if (index >= _header.HunkCount) throw new ArgumentOutOfRangeException(nameof(index));
         if (destination.Length < _header.HunkBytes) throw new ArgumentException("The destination must hold a complete CHD hunk.", nameof(destination));
+        if (!TryEnterRead()) throw Busy($"read hunk {index}");
+        try { DecodeHunk(index, destination); }
+        finally { ExitRead(); }
+    }
+
+    private void DecodeHunk(uint index, Span<byte> destination)
+    {
         bool added = false;
         try
         {
@@ -181,12 +192,14 @@ public sealed unsafe class ChdFile : IDisposable
     /// <param name="offset">A nonnegative logical byte offset.</param>
     /// <param name="destination">The caller-owned destination.</param>
     /// <returns>The number of logical bytes read, bounded by EOF.</returns>
+    /// <exception cref="InvalidOperationException">Another read of this instance is in progress.</exception>
     public int ReadAt(long offset, Span<byte> destination)
     {
         ThrowIfDisposed();
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         if ((ulong)offset >= _header.LogicalBytes || destination.IsEmpty) return 0;
         int count = (int)Math.Min((ulong)destination.Length, _header.LogicalBytes - (ulong)offset);
+        if (!TryEnterRead()) throw Busy($"read at offset {offset}");
         bool added = false;
         try
         {
@@ -201,8 +214,9 @@ public sealed unsafe class ChdFile : IDisposable
                 int within = (int)(position % _header.HunkBytes);
                 if (_cachedHunk != hunk)
                 {
+                    ThrowIfDisposed();
                     _cachedHunk = uint.MaxValue;
-                    ReadHunk(hunk, cache);
+                    DecodeHunk(hunk, cache);
                     _cachedHunk = hunk;
                 }
                 int take = Math.Min(count - written, (int)_header.HunkBytes - within);
@@ -211,8 +225,20 @@ public sealed unsafe class ChdFile : IDisposable
             }
             return written;
         }
-        finally { if (added) _handle.DangerousRelease(); }
+        finally
+        {
+            if (added) _handle.DangerousRelease();
+            ExitRead();
+        }
     }
+
+    /// <summary>Claims the instance for one native-reading call; libchdr's per-file decode state cannot be shared.</summary>
+    private bool TryEnterRead() => Interlocked.CompareExchange(ref _reading, 1, 0) == 0;
+
+    private void ExitRead() => Volatile.Write(ref _reading, 0);
+
+    private static InvalidOperationException Busy(string operation) =>
+        new($"{operation}: another read of this ChdFile is in progress. An instance is not thread-safe and cannot be read from its own data source; use one instance per thread.");
 
     /// <summary>Enumerates validated metadata descriptors without allocating per entry.</summary>
     /// <returns>A struct enumerator in chain order.</returns>
@@ -224,6 +250,7 @@ public sealed unsafe class ChdFile : IDisposable
     /// <param name="destination">The caller buffer.</param>
     /// <param name="info">Entry information including required size, or default when absent.</param>
     /// <returns>False for an absent entry or short buffer; a short buffer is unchanged.</returns>
+    /// <exception cref="InvalidOperationException">Another read of this instance is in progress.</exception>
     public bool TryGetMetadata(ChdMetadataTag tag, uint index, Span<byte> destination, out ChdMetadataInfo info)
     {
         ThrowIfDisposed();
@@ -243,7 +270,8 @@ public sealed unsafe class ChdFile : IDisposable
 
     /// <summary>Closes native and owned source resources; subsequent operations throw ObjectDisposedException.</summary>
     /// <remarks>A Dispose that races an in-flight read, which is unsupported, defers the native close until that read
-    /// returns; a fault from closing the source is then not reported.</remarks>
+    /// returns; a fault from closing the source is then not reported, and a source fault from that read may be reported
+    /// by Dispose instead of by the read.</remarks>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -291,6 +319,9 @@ public sealed unsafe class ChdFile : IDisposable
 
     private void ReadSourceExactly(long offset, Span<byte> destination)
     {
+        // Metadata reads never enter native code, but claiming them too means a data source never sees overlapping
+        // reads from one instance.
+        if (!TryEnterRead()) throw Busy($"read metadata at offset {offset}");
         bool added = false;
         try
         {
@@ -298,7 +329,11 @@ public sealed unsafe class ChdFile : IDisposable
             try { ChdMetadataIndex.ReadExactly(_handle.Context, offset, destination); }
             catch (ChdValidationException error) { throw new ChdException(error.Error, error.Message); }
         }
-        finally { if (added) _handle.DangerousRelease(); }
+        finally
+        {
+            if (added) _handle.DangerousRelease();
+            ExitRead();
+        }
     }
 
     private static void CloseFailedOpen(ChdSourceContext? context, ChdSafeHandle? handle, chd_file* file)

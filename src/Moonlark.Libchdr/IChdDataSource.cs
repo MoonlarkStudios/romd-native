@@ -3,7 +3,8 @@ namespace Moonlark.Libchdr;
 /// <summary>A seekable source with independent positional reads.</summary>
 /// <remarks>Reads must not depend on a shared cursor. The wrapper owns disposal unless opened with leaveOpen.
 /// The bytes must not change while a <see cref="ChdFile"/> reads them: the hunk map is validated at open, and changed
-/// bytes could reintroduce maps that crash or hang native code.</remarks>
+/// bytes could reintroduce maps that crash or hang native code. One <see cref="ChdFile"/> never reads its source
+/// concurrently; a source shared by several instances must tolerate concurrent <see cref="Read"/> calls.</remarks>
 public interface IChdDataSource : IDisposable
 {
     /// <summary>The byte length of the source.</summary>

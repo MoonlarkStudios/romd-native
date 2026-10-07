@@ -34,6 +34,8 @@ public sealed class ChdCdImage : IDisposable
     /// <returns>The validated view.</returns>
     /// <exception cref="NotSupportedException">The image declares GD-ROM track semantics or legacy binary CHCD metadata.</exception>
     /// <exception cref="ChdException">The track table or CD geometry is invalid.</exception>
+    /// <exception cref="InvalidOperationException">Another read of the file is in progress. As with any failure, the
+    /// file is then disposed unless leaveOpen is true, so open the view before sharing the file.</exception>
     public static ChdCdImage Open(ChdFile file, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -104,6 +106,7 @@ public sealed class ChdCdImage : IDisposable
     /// <summary>Reads a complete stored 2,448-byte frame, including alignment frames when addressed directly.</summary>
     /// <param name="chdFrame">The zero-based frame index in CHD logical storage.</param>
     /// <param name="destination">At least 2,448 bytes; any remaining bytes are unchanged.</param>
+    /// <exception cref="InvalidOperationException">Another read of the file is in progress.</exception>
     public void ReadFrame(ulong chdFrame, Span<byte> destination)
     {
         ThrowIfDisposed();
@@ -120,6 +123,7 @@ public sealed class ChdCdImage : IDisposable
     /// <param name="destination">Space for the projection; excess bytes remain unchanged.</param>
     /// <returns>The exact number of bytes copied.</returns>
     /// <exception cref="NotSupportedException">The layout cannot supply the requested slice without interpretation or synthesis.</exception>
+    /// <exception cref="InvalidOperationException">Another read of the file is in progress.</exception>
     public int ReadSector(uint trackNumber, uint storedTrackFrame, ChdCdSectorFormat format, Span<byte> destination)
     {
         ThrowIfDisposed();

@@ -68,9 +68,27 @@ Failed container/evidence runs retain logs and cannot retain a current success r
 artifacts are kept for seven days; copy reviewed receipts into the dated gate
 report before they expire.
 
-Both native and evidence manifests remain `local-unqualified` with no
-attestation. An emulated local run is diagnostic only. Hosted runner labels and
+Native, builder and evidence manifests remain `local-unqualified` with a null
+attestation field; provenance is stored in a separate signed bundle. An emulated local run is diagnostic only. Hosted runner labels and
 run metadata must establish actual architecture independently of the guest's
 reported architecture. A successful pipeline does not establish benchmarks,
 fuzzing, package installation, Windows/macOS qualification or real-disc behavior.
 The package gate remains closed until all required evidence and approvals exist.
+
+## Provenance
+
+After both Linux jobs pass, trusted pushes to main or
+refactor/csharp-engineering and manual dispatch can prepare provenance.
+Pull requests cannot sign. A read-only job downloads both same-run evidence
+artifacts and validates all eight regular subjects: each RID's native binary,
+native manifest, evidence receipt and builder receipt. It checks the source
+commit, RID and native byte digest/size before writing exact RID-qualified
+checksums. Missing or invalid subjects fail closed and remove stale checksums.
+
+A separate job grants only contents:read, id-token:write and attestations:write.
+It downloads that checksum artifact, executes the pinned official attestation
+action and retains the bundle for seven days. It has no checkout or repository
+commands, registry publication, storage-record creation or custom secrets.
+Signing records source/run provenance; it does not accept a qualification gate.
+Reviewers must verify each subject digest and the expected repository,
+workflow and source commit against the downloaded bundle before accepting it.

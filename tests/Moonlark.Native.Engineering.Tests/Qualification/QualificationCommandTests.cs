@@ -52,4 +52,34 @@ public sealed class QualificationCommandTests
         Assert.Equal(1, exit);
         Assert.Contains("Unrecorded build environment overrides", error.ToString(), StringComparison.Ordinal);
     }
+    /// <summary>A failed subject preflight must remove a stale successful checksum file.</summary>
+    [Fact]
+    public void FailedSubjectPreparationInvalidatesStaleChecksums()
+    {
+        using var root = new TemporaryDirectory();
+        string output = Path.Combine(root.Path, "artifacts", "signing", "subjects.sha256");
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        File.WriteAllText(output, "stale success");
+        using var error = new StringWriter();
+        var context = new CommandContext(root.Path, TextWriter.Null, error, new Dictionary<string, string>());
+        Assert.Equal(1, QualificationCommand.Subjects(["--source-commit", new string('a', 40)], context));
+        Assert.False(File.Exists(output));
+    }
+
+    /// <summary>Subject output links are rejected before a target can be removed or overwritten.</summary>
+    [Fact]
+    public void SubjectOutputCannotRedirectWrites()
+    {
+        using var root = new TemporaryDirectory();
+        string output = Path.Combine(root.Path, "artifacts", "signing", "subjects.sha256");
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        string sentinel = Path.Combine(root.Path, "sentinel");
+        File.WriteAllText(sentinel, "unchanged");
+        File.CreateSymbolicLink(output, sentinel);
+        using var error = new StringWriter();
+        var context = new CommandContext(root.Path, TextWriter.Null, error, new Dictionary<string, string>());
+        Assert.Equal(1, QualificationCommand.Subjects(["--source-commit", new string('a', 40)], context));
+        Assert.Contains("symlink", error.ToString(), StringComparison.Ordinal);
+        Assert.Equal("unchanged", File.ReadAllText(sentinel));
+    }
 }

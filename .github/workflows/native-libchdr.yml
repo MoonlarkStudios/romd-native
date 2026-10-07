@@ -109,3 +109,62 @@ jobs:
           name: libchdr-linux-arm64-generation
           path: artifacts/generation/libchdr
           retention-days: 7
+  prepare-linux-subjects:
+    needs: [linux-x64, linux-arm64]
+    if: github.repository == 'MoonlarkStudios/romd-native' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/refactor/csharp-engineering')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-linux-x64-evidence
+          path: artifacts/signing/linux-x64
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-linux-arm64-evidence
+          path: artifacts/signing/linux-arm64
+      - run: dotnet restore eng/Moonlark.Native.Engineering --locked-mode
+      - run: dotnet build eng/Moonlark.Native.Engineering -c Release --no-restore -warnaserror
+      - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- qualification subjects --source-commit "$EXPECTED_COMMIT"
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libchdr-linux-subjects
+          path: artifacts/signing/subjects.sha256
+          if-no-files-found: error
+          retention-days: 7
+  attest-linux:
+    needs: prepare-linux-subjects
+    if: github.repository == 'MoonlarkStudios/romd-native' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/refactor/csharp-engineering')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-linux-subjects
+          path: subjects
+      - id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: subjects/subjects.sha256
+          push-to-registry: false
+          create-storage-record: false
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libchdr-linux-provenance
+          path: ${{ steps.provenance.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 7

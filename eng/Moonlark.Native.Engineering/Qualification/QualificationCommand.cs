@@ -17,6 +17,21 @@ internal static class QualificationCommand
         return context.Report(result.Succeeded ? null : result.Failure, "local Linux evidence recorded; no release qualification");
     }
 
+    internal static int Subjects(IReadOnlyList<string> arguments, CommandContext context)
+    {
+        Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--source-commit"], required: ["--source-commit"]);
+        if (!parsed.Succeeded) return context.Report(parsed.Failure, "");
+        Result<string> directory = ArtifactsPath.ValidateDirectory(Path.Combine(context.Root, "artifacts", "signing"), context.Root);
+        if (!directory.Succeeded) return context.Report(directory.Failure, "");
+        string output = Path.Combine(directory.Value, "subjects.sha256");
+        if (ArtifactsPath.ValidateLogFile(output) is { } invalid) return context.Report(invalid, "");
+        File.Delete(output);
+        Result<string> subjects = AttestationSubjects.Create(context.Root, parsed.Value.Option("--source-commit")!);
+        if (!subjects.Succeeded) return context.Report(subjects.Failure, "");
+        File.WriteAllText(output, subjects.Value);
+        return context.Report(null, "eight verified subject checksums written; no attestation created");
+    }
+
     internal static int Container(IReadOnlyList<string> arguments, CommandContext context)
     {
         Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--rid"], required: ["--rid"]);

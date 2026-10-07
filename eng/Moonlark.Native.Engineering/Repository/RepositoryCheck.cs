@@ -7,7 +7,7 @@ using Moonlark.Native.Engineering.Core;
 
 namespace Moonlark.Native.Engineering.Repository;
 
-/// <summary>Offline checks for family identity and the closed, read-only CI contracts.</summary>
+/// <summary>Offline checks for family identity and the closed CI and scoped provenance contracts.</summary>
 internal static partial class RepositoryCheck
 {
     internal static readonly FrozenDictionary<string, string> Actions = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -160,8 +160,8 @@ internal static partial class RepositoryCheck
         // This pipeline's jobs, artifact transfer and runner/RID pairs are reviewed as one exact contract.
         // Keep the general source-workflow grammar closed; any Linux workflow edit requires updating this pin.
         if (name == "native-libchdr.yml")
-            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "c5ff8d1ab85aa252c16810eb458d9e12bec73ba6aab1776f40a09bed46ba493a",
-                "native-libchdr.yml differs from the reviewed read-only Linux workflow");
+            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "d7a2dc47c0555e64dfaf8a9d5ccd56d1946bff9ab172bdb4580c0eb829cdba3b",
+                "native-libchdr.yml differs from the reviewed Linux evidence and provenance workflow");
         string[] lines = text.Split('\n');
         (string Key, string Value, int Column)? previous = null;
         for (int index = 0; index < lines.Length; index++)

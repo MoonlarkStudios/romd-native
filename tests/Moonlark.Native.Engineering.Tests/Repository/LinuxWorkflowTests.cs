@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Moonlark.Native.Engineering.Tests.Repository;
 
-/// <summary>The reviewed Linux pipeline is an exact read-only contract, independently of the older source grammar.</summary>
+/// <summary>The reviewed Linux pipeline is an exact evidence and provenance contract, independently of the older source grammar.</summary>
 public sealed class LinuxWorkflowTests
 {
     /// <summary>Both real architectures depend on freshly produced fixtures and run generation and qualification.</summary>

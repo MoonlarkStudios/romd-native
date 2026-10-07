@@ -32,10 +32,13 @@ qualification remains manual or release-gated; it is not in per-change CI.
 See [Linux qualification](docs/linux-qualification.md) for commands, evidence
 boundaries and builder prerequisites.
 
-All workflows retain contents:read permissions and SHA-pinned actions. The
-source workflows use the closed ASCII/LF grammar in `repo check`; the Linux
-workflow is pinned by its complete file digest so its runner/RID pairs,
-dependencies, commands and temporary artifact transfer are reviewed together.
-Changing that pipeline requires updating its digest and mutation tests. These
-workflows cannot publish packages, release assets, tags, attestations or binary
-PRs. A publishing pipeline requires separate explicit approval and least privilege.
+All workflows retain contents:read and SHA-pinned actions. Only the approved
+Linux attestation job has job-scoped id-token:write and attestations:write,
+after both Linux jobs and read-only subject validation succeed on trusted
+push/manual runs. That job never checks out or executes repository code.
+The source workflows use the closed ASCII/LF grammar in `repo check`; the
+Linux workflow is pinned by its complete file digest so runner/RID pairs,
+dependencies, commands, artifact transfer and provenance permissions are
+reviewed together. Changes require updating its digest and mutation tests.
+No workflow can publish packages, release assets, tags or binary PRs. Further
+publishing permissions require separate explicit approval and least privilege.

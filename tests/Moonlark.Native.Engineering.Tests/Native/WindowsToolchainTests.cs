@@ -44,6 +44,102 @@ public sealed class WindowsToolchainTests
         Assert.False(tools.Measure().Succeeded);
     }
 
+    /// <summary>Failure evidence identifies the rejected entry without accepting or dropping it.</summary>
+    [Theory]
+    [InlineData("leading-empty", "empty")]
+    [InlineData("trailing-empty", "empty")]
+    [InlineData("relative", "not-absolute")]
+    [InlineData("unknown", "not-allowed")]
+    [InlineData("nonexistent", "missing-directory")]
+    [InlineData("link", "link")]
+    public void SearchPathFailureIdentifiesRejectedEntry(string scenario, string reason)
+    {
+        using var tools = new WindowsToolset();
+        string original = tools.Environment["INCLUDE"];
+        string[] required = original.Split(';');
+        string rejected = scenario switch
+        {
+            "leading-empty" or "trailing-empty" => "",
+            "relative" => "relative\"quoted\nentry",
+            "unknown" => Path.Combine(tools.Root, "unreviewed"),
+            _ => required[0],
+        };
+        if (scenario == "unknown") Directory.CreateDirectory(rejected);
+        if (scenario is "nonexistent" or "link") Directory.Delete(rejected);
+        if (scenario == "link")
+        {
+            string target = Path.Combine(tools.Root, "linked-include");
+            Directory.CreateDirectory(target);
+            Directory.CreateSymbolicLink(rejected, target);
+        }
+        tools.Environment["INCLUDE"] = scenario switch
+        {
+            "leading-empty" => ";" + original,
+            "nonexistent" or "link" => original,
+            _ => original + ";" + rejected,
+        };
+        Result<WindowsToolchainInfo> result = tools.Measure();
+        Assert.False(result.Succeeded);
+        string message = result.Failure.Message;
+        Assert.DoesNotContain('\n', message);
+        JsonObject diagnostic = SearchPathDiagnostic(message, "INCLUDE");
+        Assert.Equal(tools.Environment["INCLUDE"], diagnostic["rawValue"]!.GetValue<string>());
+        int index = scenario is "leading-empty" or "nonexistent" or "link" ? 0 : required.Length;
+        JsonObject entry = diagnostic["entries"]!.AsArray()[index]!.AsObject();
+        Assert.Equal(index, entry["index"]!.GetValue<int>());
+        Assert.Equal(rejected, entry["value"]!.GetValue<string>());
+        Assert.Equal(reason, entry["reason"]!.GetValue<string>());
+        Assert.Equal<string>(required, diagnostic["requiredRoots"]!.AsArray().Select(node => node!.GetValue<string>()));
+        Assert.Empty(diagnostic["missingRequiredRoots"]!.AsArray());
+        Assert.All(required, path => Assert.Contains(path, diagnostic["allowedRoots"]!.AsArray().Select(node => node!.GetValue<string>())));
+    }
+
+    /// <summary>Present entries can all be allowed while a selected required directory is absent.</summary>
+    [Fact]
+    public void SearchPathFailureIdentifiesMissingRequiredRoot()
+    {
+        using var tools = new WindowsToolset();
+        string[] required = tools.Environment["LIB"].Split(';');
+        tools.Environment["LIB"] = string.Join(';', required.Skip(1));
+        Result<WindowsToolchainInfo> result = tools.Measure();
+        Assert.False(result.Succeeded);
+        JsonObject diagnostic = SearchPathDiagnostic(result.Failure.Message, "LIB");
+        Assert.Equal(required[0], Assert.Single(diagnostic["missingRequiredRoots"]!.AsArray())!.GetValue<string>());
+        Assert.All(diagnostic["entries"]!.AsArray(), entry => Assert.Null(entry!["reason"]));
+    }
+
+    /// <summary>Diagnostics do not change the established rejection for a wholly empty environment value.</summary>
+    [Fact]
+    public void EmptySearchPathRemainsMissingEnvironment()
+    {
+        using var tools = new WindowsToolset();
+        tools.Environment["INCLUDE"] = "";
+        Assert.Equal("Windows toolchain missing INCLUDE", tools.Measure().Failure.Message);
+    }
+
+    /// <summary>Valid search paths retain their recipe tokens and exact diagnostic-only locations.</summary>
+    [Fact]
+    public void SuccessfulSearchPathIdentityRemainsUnchanged()
+    {
+        using var tools = new WindowsToolset();
+        WindowsToolchainInfo measured = tools.Measure().Value;
+        Assert.Equal("$VC/include;$SDK/Include/10.0.26100.0/ucrt;$SDK/Include/10.0.26100.0/shared;$SDK/Include/10.0.26100.0/um",
+            measured.Recipe["windowsINCLUDE"]!.GetValue<string>());
+        Assert.Equal("$VC/lib/x64;$SDK/Lib/10.0.26100.0/ucrt/x64;$SDK/Lib/10.0.26100.0/um/x64", measured.Recipe["windowsLIB"]!.GetValue<string>());
+        Assert.Equal("$VC/lib/x64", measured.Recipe["windowsLIBPATH"]!.GetValue<string>());
+        foreach (string name in (string[])["INCLUDE", "LIB", "LIBPATH"])
+            Assert.Equal(tools.Environment[name], measured.Locations["windows" + name]!.GetValue<string>());
+    }
+
+    private static JsonObject SearchPathDiagnostic(string message, string variable)
+    {
+        string prefix = "Windows " + variable + " differs from selected header/library roots; diagnostics=";
+        Assert.StartsWith(prefix, message, StringComparison.Ordinal);
+        JsonObject diagnostic = JsonNode.Parse(message[prefix.Length..])!.AsObject();
+        Assert.Equal(variable, diagnostic["variable"]!.GetValue<string>());
+        return diagnostic;
+    }
+
     /// <summary>Resolving another existing executable cannot masquerade as the selected compiler or SDK tool.</summary>
     [Theory]
     [InlineData("cl")]

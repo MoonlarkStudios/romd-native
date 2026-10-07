@@ -116,8 +116,31 @@ internal static class WindowsToolchain
         string[] paths = value.Split(';', StringSplitOptions.TrimEntries);
         if (paths.Length == 0 || paths.Any(path => !Path.IsPathFullyQualified(path) || !Directory.Exists(path) || ArtifactsPath.IsLink(path)
             || !allowed.Any(candidate => SamePath(candidate, path))) || required.Any(path => !paths.Any(candidate => SamePath(candidate, path))))
-            return new Failure("Windows " + variable + " differs from selected header/library roots");
+            return new Failure("Windows " + variable + " differs from selected header/library roots; diagnostics="
+                + SearchPathDiagnostic(variable, value, paths, required, allowed));
         return string.Join(';', paths.Select(path => Token(path, vc, "$VC", vs, "$VS", sdk, "$SDK", systemRoot, "$SYSTEMROOT")));
+    }
+
+    private static string SearchPathDiagnostic(string variable, string value, string[] paths, string[] required, string[] allowed)
+    {
+        var entries = new JsonArray();
+        for (int index = 0; index < paths.Length; index++)
+        {
+            string path = paths[index];
+            string? reason = path.Length == 0 ? "empty"
+                : !Path.IsPathFullyQualified(path) ? "not-absolute"
+                : !Directory.Exists(path) ? "missing-directory"
+                : ArtifactsPath.IsLink(path) ? "link"
+                : !allowed.Any(candidate => SamePath(candidate, path)) ? "not-allowed" : null;
+            entries.Add(new JsonObject { ["index"] = index, ["value"] = path, ["reason"] = reason });
+        }
+        return JsonFields.Compact(new JsonObject
+        {
+            ["variable"] = variable, ["rawValue"] = value, ["entries"] = entries,
+            ["requiredRoots"] = JsonFields.Array(required), ["allowedRoots"] = JsonFields.Array(allowed),
+            ["missingRequiredRoots"] = JsonFields.Array(required.Where(path => !paths.Any(candidate =>
+                candidate.IndexOfAny(Path.GetInvalidPathChars()) < 0 && SamePath(candidate, path)))),
+        });
     }
 
     private static string Token(string path, params string[] roots)

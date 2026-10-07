@@ -5,6 +5,7 @@ using Moonlark.Native.Engineering.Core;
 using Moonlark.Native.Engineering.Fixtures;
 using Moonlark.Native.Engineering.Generation;
 using Moonlark.Native.Engineering.Native;
+using Moonlark.Native.Engineering.Qualification;
 using Moonlark.Native.Engineering.Repository;
 using Moonlark.Native.Engineering.Upstream;
 
@@ -22,6 +23,7 @@ internal static class CommandRouter
         ["chdman build"] = ChdmanCommand.Build,
         ["fixtures generate"] = FixturesCommand.Generate,
         ["fixtures verify"] = FixturesCommand.Verify,
+        ["qualification linux"] = QualificationCommand.Linux,
     };
 
     internal static int Run(IReadOnlyList<string> arguments, TextWriter output, TextWriter error)

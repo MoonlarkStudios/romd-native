@@ -231,6 +231,84 @@ public sealed class FixtureVerificationTests
         Assert.False(fixture.Verify().Succeeded);
     }
 
+    /// <summary>Hashes and receipts that agree with wrong bytes still cannot replace a fixed CD projection.</summary>
+    [Theory]
+    [InlineData("cd-cdlz", 16 * 2448)]
+    [InlineData("cd-edge-multi", 20 * 2448)]
+    [InlineData("cd-edge-single", 17 * 2448)]
+    [InlineData("cd-edge-partial", 35 * 2448)]
+    [InlineData("cd-edge-subcode", 8 * 2448 + 2352)]
+    public void RejectsRehashedWrongCdProjection(string stem, int offset)
+    {
+        using var fixture = new FixtureDirectory();
+        JsonNode entry = fixture.Manifest["fixtures"]!.AsArray().Single(item => (string)item!["chd"]!["path"]! == stem + ".chd")!;
+        byte[] logical = File.ReadAllBytes(Path.Combine(fixture.Path, stem + ".logical"));
+        logical[offset] ^= 1;
+        entry["logical"] = fixture.Write(stem + ".logical", logical);
+        byte[] chd = File.ReadAllBytes(Path.Combine(fixture.Path, stem + ".chd"));
+        string raw = ChdHeader.Sha1(logical);
+        Convert.FromHexString(raw).CopyTo(chd, 64);
+        string overall = ChdHeader.ComputeOverallSha1(raw, ChdHeader.Parse(chd).Value.Metadata);
+        Convert.FromHexString(overall).CopyTo(chd, 84);
+        entry["chd"] = fixture.Write(stem + ".chd", chd);
+        entry["header"] = ChdHeader.Parse(chd).Value.ToJson();
+        entry["computedOverallSha1"] = overall;
+        Assert.Contains("Logical source projection mismatch", fixture.Verify().Failure.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Rehashed metadata, substituted source files and missing v2 members fail independently of transfer hashes.</summary>
+    [Theory]
+    [InlineData("metadata")]
+    [InlineData("source")]
+    [InlineData("missing")]
+    public void RejectsSelfConsistentWrongEdgeRecipe(string corruption)
+    {
+        using var fixture = new FixtureDirectory();
+        JsonArray entries = fixture.Manifest["fixtures"]!.AsArray();
+        JsonNode entry = entries.Single(item => (string)item!["chd"]!["path"]! == "cd-edge-subcode.chd")!;
+        if (corruption == "missing") entries.Remove(entry);
+        else if (corruption == "source")
+        {
+            JsonArray sources = fixture.Manifest["sources"]!.AsArray();
+            int index = sources.Select((value, index) => (value, index)).Single(item => (string)item.value!["path"]! == "cd-edge-sub1.bin").index;
+            sources[index] = fixture.Write("cd-edge-sub1.bin", File.ReadAllBytes(Path.Combine(fixture.Path, "cd-edge-sub2.bin")));
+        }
+        else
+        {
+            byte[] chd = File.ReadAllBytes(Path.Combine(fixture.Path, "cd-edge-subcode.chd"));
+            int offset = chd.AsSpan().IndexOf("FRAMES:8"u8);
+            Assert.True(offset >= 0);
+            chd[offset + 7] = (byte)'7';
+            ChdHeader parsed = ChdHeader.Parse(chd).Value;
+            string overall = ChdHeader.ComputeOverallSha1(parsed.RawSha1, parsed.Metadata);
+            Convert.FromHexString(overall).CopyTo(chd, 84);
+            entry["chd"] = fixture.Write("cd-edge-subcode.chd", chd);
+            entry["header"] = ChdHeader.Parse(chd).Value.ToJson();
+            entry["computedOverallSha1"] = overall;
+        }
+        string message = corruption switch { "metadata" => "Edge fixture metadata mismatch", "source" => "Synthetic source bytes mismatch", _ => "Incomplete/unknown fixture inventory" };
+        Assert.Contains(message, fixture.Verify().Failure.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Neither relabeling the transform nor rehashing raw audio/subcode can validate a corrupted TOC extraction.</summary>
+    [Theory]
+    [InlineData("transform")]
+    [InlineData("audio")]
+    [InlineData("subcode")]
+    public void RejectsCorruptedRawTocExtraction(string change)
+    {
+        using var fixture = new FixtureDirectory();
+        JsonNode entry = fixture.Manifest["fixtures"]!.AsArray().Single(item => (string)item!["chd"]!["path"]! == "cd-edge-subcode.chd")!;
+        if (change == "transform") entry["recoveryTransform"] = "none";
+        else
+        {
+            byte[] raw = File.ReadAllBytes(Path.Combine(fixture.Path, "cd-edge-subcode.extracted.toc.bin"));
+            raw[8 * 2448 + (change == "subcode" ? 2352 : 0)] ^= 1;
+            entry["rawExtracted"] = fixture.Write("cd-edge-subcode.extracted.toc.bin", raw);
+        }
+        Assert.Contains(change == "transform" ? "Subcode extraction transform mismatch" : "Raw TOC extraction mismatch", fixture.Verify().Failure.Message, StringComparison.Ordinal);
+    }
+
     private sealed class FixtureDirectory : IDisposable
     {
         private readonly TemporaryDirectory _directory = new();
@@ -246,6 +324,7 @@ public sealed class FixtureVerificationTests
             foreach (string codec in FixtureGenerator.DvdCodecs) fixtures.Add(Make("dvd", codec, "dvd-" + codec, dvd));
             foreach (string codec in FixtureGenerator.CdCodecs) fixtures.Add(Make("cd", codec, "cd-" + codec, cd));
             fixtures.Add(Make("cd", "cdlz", "cd-subcode", subcode));
+            foreach (string stem in CdEdgeFixtures.Stems) fixtures.Add(Make("cd", "cdlz", stem, CdEdgeFixtures.Source(stem)));
             var negatives = new JsonArray();
             foreach ((string name, int offset, string diagnostic) in new[]
             {
@@ -272,9 +351,10 @@ public sealed class FixtureVerificationTests
                     ["binary"] = new JsonObject { ["path"] = "unavailable-chdman", ["bytes"] = 1, ["sha256"] = new string('a', 64) },
                     ["recipeSha256"] = new string('b', 64), ["qualification"] = "local-unqualified",
                 },
-                ["sources"] = new JsonArray(Write("dvd-source.iso", dvd), Write("cd-source.bin", cd),
+                ["sources"] = new JsonArray([Write("dvd-source.iso", dvd), Write("cd-source.bin", cd),
                     Write("cd-source.cue", Encoding.ASCII.GetBytes(SyntheticSources.CdCue)), Write("cd-subcode-source.bin", subcode),
-                    Write("cd-subcode-source.toc", Encoding.ASCII.GetBytes(SyntheticSources.CdSubcodeToc))),
+                    Write("cd-subcode-source.toc", Encoding.ASCII.GetBytes(SyntheticSources.CdSubcodeToc)),
+                    .. CdEdgeFixtures.Sources().Select(entry => (JsonNode?)Write(entry.Key, entry.Value))]),
                 ["fixtures"] = fixtures, ["negativeVerification"] = negatives,
             };
         }
@@ -287,7 +367,13 @@ public sealed class FixtureVerificationTests
 
         private JsonObject Make(string media, string codec, string stem, byte[] logical)
         {
-            byte[] chd = new byte[124];
+            byte[] source = logical;
+            if (CdEdgeFixtures.Stems.Contains(stem)) logical = CdEdgeFixtures.Logical(stem);
+            else if (media == "cd" && stem != "cd-subcode")
+                logical = CdEdgeFixtures.Project([(source[..(16 * 2352)], false, 2352), (source[(16 * 2352)..], true, 2352)]);
+            byte[] chd = CdEdgeFixtures.Stems.Contains(stem)
+                ? (SyntheticChd.For(logical, 19584, 2448, "CHT2", []) with { TrackMetadata = CdEdgeFixtures.Metadata(stem) }).ToBytes()
+                : new byte[124];
             "MComprHD"u8.CopyTo(chd);
             BinaryPrimitives.WriteUInt32BigEndian(chd.AsSpan(8), 124);
             BinaryPrimitives.WriteUInt32BigEndian(chd.AsSpan(12), 5);
@@ -296,19 +382,27 @@ public sealed class FixtureVerificationTests
             BinaryPrimitives.WriteUInt32BigEndian(chd.AsSpan(56), media == "dvd" ? 16384U : 19584U);
             BinaryPrimitives.WriteUInt32BigEndian(chd.AsSpan(60), media == "dvd" ? 2048U : 2448U);
             string raw = ChdHeader.Sha1(logical);
-            string overall = ChdHeader.ComputeOverallSha1(raw, []);
+            string overall = ChdHeader.ComputeOverallSha1(raw, ChdHeader.Parse(chd).Value.Metadata);
             if (codec != "none")
             {
                 Convert.FromHexString(raw).CopyTo(chd, 64);
                 Convert.FromHexString(overall).CopyTo(chd, 84);
             }
-            return new JsonObject
+            var result = new JsonObject
             {
                 ["media"] = media, ["codec"] = codec, ["chd"] = Write(stem + ".chd", chd),
                 ["header"] = ChdHeader.Parse(chd).Value.ToJson(), ["logical"] = Write(stem + ".logical", logical),
                 ["computedOverallSha1"] = overall, ["chdmanVerifiedBothHashes"] = codec != "none", ["exactSourceRecovery"] = true,
-                ["extracted"] = Write(stem + ".extracted." + (media == "dvd" ? "iso" : "bin"), logical),
+                ["extracted"] = Write(stem + ".extracted." + (media == "dvd" ? "iso" : "bin"), source),
             };
+            if (stem == "cd-edge-subcode")
+            {
+                byte[] toc = [.. source];
+                CdEdgeFixtures.SwapSubcodeAudio(toc);
+                result["rawExtracted"] = Write(stem + ".extracted.toc.bin", toc);
+                result["recoveryTransform"] = "swap-audio-16-after-track1";
+            }
+            return result;
         }
 
         internal void Save() => File.WriteAllText(System.IO.Path.Combine(Path, FixtureGenerator.ManifestName), ReceiptJson.Serialize(Manifest));

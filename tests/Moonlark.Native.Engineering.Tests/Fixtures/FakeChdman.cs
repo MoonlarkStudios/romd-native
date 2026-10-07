@@ -14,6 +14,8 @@ namespace Moonlark.Native.Engineering.Tests.Fixtures;
 /// <summary>The CHD v5 header fields the direct parser reads, followed by one checksummed metadata entry.</summary>
 internal sealed record SyntheticChd(ulong LogicalBytes, uint HunkBytes, uint UnitBytes, string RawSha1, string OverallSha1, string Tag, byte[] Metadata)
 {
+    internal string[]? TrackMetadata { get; init; }
+
     private const int HeaderBytes = 124;
     private const int MetadataHeaderBytes = 16;
 
@@ -35,7 +37,8 @@ internal sealed record SyntheticChd(ulong LogicalBytes, uint HunkBytes, uint Uni
 
     internal byte[] ToBytes()
     {
-        byte[] data = new byte[HeaderBytes + MetadataHeaderBytes + Metadata.Length];
+        byte[][] entries = TrackMetadata is null ? [Metadata] : TrackMetadata.Select(text => Encoding.ASCII.GetBytes(text + '\0')).ToArray();
+        byte[] data = new byte[HeaderBytes + entries.Sum(entry => MetadataHeaderBytes + entry.Length)];
         "MComprHD"u8.CopyTo(data);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(8), HeaderBytes);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(12), 5);
@@ -45,9 +48,22 @@ internal sealed record SyntheticChd(ulong LogicalBytes, uint HunkBytes, uint Uni
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(60), UnitBytes);
         Convert.FromHexString(RawSha1).CopyTo(data, 64);
         Convert.FromHexString(OverallSha1).CopyTo(data, 84);
-        Encoding.ASCII.GetBytes(Tag).CopyTo(data, HeaderBytes);
-        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(HeaderBytes + 4), 0x0100_0000u | (uint)Metadata.Length);
-        Metadata.CopyTo(data, HeaderBytes + MetadataHeaderBytes);
+        int offset = HeaderBytes;
+        for (int index = 0; index < entries.Length; index++)
+        {
+            byte[] entry = entries[index];
+            Encoding.ASCII.GetBytes(Tag).CopyTo(data, offset);
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(offset + 4), 0x0100_0000u | (uint)entry.Length);
+            int next = offset + MetadataHeaderBytes + entry.Length;
+            BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(offset + 8), index + 1 < entries.Length ? (ulong)next : 0);
+            entry.CopyTo(data, offset + MetadataHeaderBytes);
+            offset = next;
+        }
+        if (TrackMetadata is not null)
+        {
+            ChdHeader parsed = ChdHeader.Parse(data).Value;
+            Convert.FromHexString(ChdHeader.ComputeOverallSha1(RawSha1, parsed.Metadata)).CopyTo(data, 84);
+        }
         return data;
     }
 }
@@ -94,6 +110,20 @@ internal sealed class FakeChdman : IDisposable
         foreach (string codec in FixtureGenerator.CdCodecs)
             Prepare("cd-" + codec, Synthetic("cd-" + codec), (".extracted.bin", SyntheticSources.Cd()), (".extracted.cue", "synthetic cue"u8.ToArray()));
         Prepare("cd-subcode", SyntheticSources.CdSubcode(), (".extracted.bin", SyntheticSources.CdSubcode()), (".extracted.toc", "synthetic toc"u8.ToArray()));
+        foreach (string stem in CdEdgeFixtures.Stems)
+        {
+            Prepare(stem, CdEdgeFixtures.Logical(stem), (".extracted.bin", CdEdgeFixtures.Source(stem)), (".extracted.cue", "synthetic cue"u8.ToArray()));
+            WriteHeader(stem, _headers[stem] with { TrackMetadata = CdEdgeFixtures.Metadata(stem) });
+            ChdHeader header = ChdHeader.Read(Path.Combine(Prepared, stem + ".chd")).Value;
+            _headers[stem] = _headers[stem] with { OverallSha1 = header.OverallSha1 };
+            if (stem == "cd-edge-subcode")
+            {
+                byte[] toc = CdEdgeFixtures.Source(stem);
+                CdEdgeFixtures.SwapSubcodeAudio(toc);
+                Replace(stem + ".extracted.toc.bin", toc);
+                Replace(stem + ".extracted.toc", "synthetic toc"u8.ToArray());
+            }
+        }
         Respond("dvd-none.chd", "No verification to be done; CHD is uncompressed\n");
         foreach ((string name, string diagnostic) in NegativeCases) Respond("negative-" + name + ".chd", diagnostic + "\n");
     }
@@ -123,6 +153,7 @@ internal sealed class FakeChdman : IDisposable
     {
         SyntheticChd header = _headers[stem];
         Prepare(stem, logical, header.HunkBytes, header.UnitBytes, header.Tag, header.Metadata);
+        if (header.TrackMetadata is not null) WriteHeader(stem, _headers[stem] with { TrackMetadata = header.TrackMetadata });
     }
 
     internal void Replace(string name, byte[] contents) => File.WriteAllBytes(Path.Combine(Prepared, name), contents);

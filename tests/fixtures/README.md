@@ -45,3 +45,41 @@ headers, metadata and recovery results. Source identities for v1 are:
 Generated binaries and source data remain local ignored artifacts. These small
 synthetic cases establish no real-disc, DVD-9 memory, emulator compatibility or
 platform qualification.
+
+Generator `libchdr-synthetic/v2` retains all eleven v1 fixture records and all
+five v1 source identities unchanged. It adds four `cdlz` cases with eight-frame
+hunks and explicit source-derived logical projections:
+
+| Fixture | Source geometry | Stored frame starts | Logical frames |
+| --- | --- | --- | ---: |
+| `cd-edge-multi` | Separate 17-frame MODE2/2352, 13-frame AUDIO, 9-frame AUDIO files | 0, 20, 36 | 48 |
+| `cd-edge-single` | The same three tracks in one concatenated BIN | 0, 20, 36 | 48 |
+| `cd-edge-partial` | First two tracks only; last hunk is half full | 0, 20 | 36 |
+| `cd-edge-subcode` | 8 MODE1/2352 and 6 AUDIO frames, each with 96 RW_RAW bytes | 0, 8 | 16 |
+
+Track 2 has two stored pregap frames; track 3 declares a two-frame unstored
+pregap. Four-frame alignment is zero padding outside track-local reads. The
+subcode case deliberately retains `PGSUB:NONE` with `SUBTYPE:RW_RAW`: stored
+pregap subcode follows the track layout. V2 uses the existing arithmetic data
+and audio patterns extended with a track discriminator; its new source hashes
+are pinned in `V2SourceIdentitiesAreStable`.
+
+CUE extraction omits subcode, so the subcode case uses CDRDAO TOC extraction.
+Its raw `.extracted.toc.bin` is retained and hashed in `rawExtracted`. TOC audio
+is big-endian; `recoveryTransform: swap-audio-16-after-track1` explicitly swaps
+only the 2,352 audio bytes in each track-2 frame, retaining every subcode byte,
+to write `.extracted.bin` and require exact recovery of the CUE source bytes.
+Transfer verification checks the raw extraction, named transform, normalized
+bytes, fixed track metadata, source projection and zero alignment independently
+of self-consistent manifest hashes. All generated outputs are flat files.
+
+`ChdCdFixtureV2Tests` checks every stored frame and sector against source files,
+audio swapping, subcode including stored pregaps, zero padding, track bounds,
+reads crossing hunk boundaries and stream EOF. Separate integrity cases require
+both hashes for every new compressed fixture. The source/geometry cases also
+apply to the preserved historical reviewer originals recorded in
+[reviewed-cd-identities.json](reviewed-cd-identities.json). Those references pin
+measured CHD, CUE and source bytes only. V2 uses separate arithmetic recipes
+and does not claim to reproduce those historical bytes. In particular, the
+historical `sub.chd` is uncompressed with no stored hashes;
+its source/geometry evidence is distinct from the v2 compressed-integrity gate.

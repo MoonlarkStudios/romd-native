@@ -33,6 +33,7 @@ internal static class FixtureVerification
                 ["cd-subcode-source.bin"] = SyntheticSources.CdSubcode(),
                 ["cd-subcode-source.toc"] = Encoding.ASCII.GetBytes(SyntheticSources.CdSubcodeToc),
             };
+            foreach ((string name, byte[] bytes) in CdEdgeFixtures.Sources()) sources.Add(name, bytes);
             Dictionary<string, JsonObject> sourceInventory = Inventory(manifest["sources"], item => Text(item["path"]), "source");
             Require(sourceInventory.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(sources.Keys), "Incomplete/unknown source inventory");
             foreach ((string name, byte[] expected) in sources)
@@ -43,6 +44,7 @@ internal static class FixtureVerification
                 .. FixtureGenerator.DvdCodecs.Select(codec => new ExpectedFixture("dvd", codec, "dvd-" + codec, sources["dvd-source.iso"])),
                 .. FixtureGenerator.CdCodecs.Select(codec => new ExpectedFixture("cd", codec, "cd-" + codec, sources["cd-source.bin"])),
                 new("cd", "cdlz", "cd-subcode", sources["cd-subcode-source.bin"]),
+                .. CdEdgeFixtures.Stems.Select(stem => new ExpectedFixture("cd", "cdlz", stem, CdEdgeFixtures.Source(stem))),
             ];
             Dictionary<string, JsonObject> fixtures = Inventory(manifest["fixtures"], item => Text(Object(item["chd"], "CHD file")["path"]), "fixture");
             Require(fixtures.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expectedFixtures.Select(item => item.Stem + ".chd")),
@@ -66,6 +68,13 @@ internal static class FixtureVerification
         byte[] extracted = ReadFile(directory, Object(fixture["extracted"], "Extracted file"),
             expected.Stem + ".extracted." + (expected.Media == "dvd" ? "iso" : "bin"));
         Require(extracted.AsSpan().SequenceEqual(expected.Source) && Boolean(fixture["exactSourceRecovery"], true), "Exact source recovery mismatch");
+        if (expected.Stem == "cd-edge-subcode")
+        {
+            byte[] rawExtraction = ReadFile(directory, Object(fixture["rawExtracted"], "Raw TOC extraction"), expected.Stem + ".extracted.toc.bin");
+            Require(rawExtraction.Length == 14 * 2448 && Text(fixture["recoveryTransform"]) == "swap-audio-16-after-track1", "Subcode extraction transform mismatch");
+            CdEdgeFixtures.SwapSubcodeAudio(rawExtraction);
+            Require(rawExtraction.AsSpan().SequenceEqual(extracted), "Raw TOC extraction mismatch");
+        }
         Result<ChdHeader> parsed = ChdHeader.Parse(chd);
         Require(parsed.Succeeded, parsed.Succeeded ? "" : parsed.Failure.Message);
         Span<byte> compressors = stackalloc byte[16];
@@ -85,8 +94,15 @@ internal static class FixtureVerification
         Require(Boolean(fixture["chdmanVerifiedBothHashes"], compressed), "Fixture hash verification claim mismatch");
         Require(compressed ? header.RawSha1 == raw && header.OverallSha1 == overall
             : header.RawSha1 == new string('0', 40) && header.OverallSha1 == new string('0', 40), "Header/logical SHA1 mismatch");
-        if (expected.Media == "dvd" || expected.Stem == "cd-subcode")
-            Require(logical.AsSpan().SequenceEqual(expected.Source), "Logical source bytes mismatch");
+        byte[] projected = expected.Source;
+        if (CdEdgeFixtures.Stems.Contains(expected.Stem))
+        {
+            projected = CdEdgeFixtures.Logical(expected.Stem);
+            Require(CdEdgeFixtures.MetadataMatches(expected.Stem, header), "Edge fixture metadata mismatch");
+        }
+        else if (expected.Media == "cd" && expected.Stem != "cd-subcode")
+            projected = CdEdgeFixtures.Project([(expected.Source[..(16 * 2352)], false, 2352), (expected.Source[(16 * 2352)..], true, 2352)]);
+        Require(logical.AsSpan().SequenceEqual(projected), "Logical source projection mismatch");
     }
 
     private static void VerifyNegative(string directory, JsonNode? node, byte[] original)

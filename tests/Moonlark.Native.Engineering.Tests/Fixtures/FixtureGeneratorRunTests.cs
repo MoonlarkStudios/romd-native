@@ -12,7 +12,21 @@ namespace Moonlark.Native.Engineering.Tests.Fixtures;
 public sealed class FixtureGeneratorRunTests
 {
     private static readonly string[] Stems =
-        [.. FixtureGenerator.DvdCodecs.Select(codec => "dvd-" + codec), .. FixtureGenerator.CdCodecs.Select(codec => "cd-" + codec), "cd-subcode"];
+        [.. FixtureGenerator.DvdCodecs.Select(codec => "dvd-" + codec), .. FixtureGenerator.CdCodecs.Select(codec => "cd-" + codec), "cd-subcode", .. CdEdgeFixtures.Stems];
+
+    /// <summary>The new recipes add four distinct geometry cases without replacing the original eleven.</summary>
+    [Fact]
+    public void V2IncludesAllFourEdgeFixtures()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var fake = new FakeChdman();
+        JsonObject manifest = fake.Run().Value;
+        Assert.Equal("libchdr-synthetic/v2", (string)manifest["generatorVersion"]!);
+        string[] names = manifest["fixtures"]!.AsArray().Select(item => (string)item!["chd"]!["path"]!).ToArray();
+        Assert.Equal(15, names.Length);
+        foreach (string stem in new[] { "multi", "single", "partial", "subcode" })
+            Assert.Contains("cd-edge-" + stem + ".chd", names);
+    }
 
     /// <summary>Consistent tool outputs produce the full manifest, with independent hashes, exact recovery and every negative case.</summary>
     [Fact]
@@ -29,7 +43,7 @@ public sealed class FixtureGeneratorRunTests
             Assert.Equal(stem != "dvd-none", (bool)fixture!["chdmanVerifiedBothHashes"]!);
             Assert.Equal((header.RawSha1, header.RawSha1), ((string)fixture["header"]!["rawSha1"]!, (string)fixture["logical"]!["sha1"]!));
             Assert.Equal((header.OverallSha1, header.OverallSha1), ((string)fixture["header"]!["overallSha1"]!, (string)fixture["computedOverallSha1"]!));
-            byte[] source = stem.StartsWith("dvd-", StringComparison.Ordinal) ? SyntheticSources.Dvd() : stem == "cd-subcode" ? SyntheticSources.CdSubcode() : SyntheticSources.Cd();
+            byte[] source = CdEdgeFixtures.Stems.Contains(stem) ? CdEdgeFixtures.Source(stem) : stem.StartsWith("dvd-", StringComparison.Ordinal) ? SyntheticSources.Dvd() : stem == "cd-subcode" ? SyntheticSources.CdSubcode() : SyntheticSources.Cd();
             Assert.Equal(Digest.Sha256(source), (string)fixture["extracted"]!["sha256"]!);
         }
         byte[] lzma = File.ReadAllBytes(Path.Combine(fake.Output, "dvd-lzma.chd"));
@@ -103,6 +117,34 @@ public sealed class FixtureGeneratorRunTests
             default: fake.Replace("cd-subcode.extracted.bin", FakeChdman.Corrupt(SyntheticSources.CdSubcode())); break;
         }
         Assert.Equal(message, fake.Run().Failure.Message);
+    }
+
+    /// <summary>Tool success cannot hide a changed edge projection, metadata, normalization, subcode or verification result.</summary>
+    [Theory]
+    [InlineData("projection", "Edge fixture source projection mismatch")]
+    [InlineData("metadata", "Edge fixture metadata mismatch")]
+    [InlineData("audio", "Edge CD source bytes were not exactly recovered")]
+    [InlineData("subcode", "Edge CD source bytes were not exactly recovered")]
+    [InlineData("length", "Edge subcode extraction length mismatch")]
+    [InlineData("raw-hash", "Independent edge fixture hash mismatch")]
+    [InlineData("verification", "chdman did not verify both edge fixture hashes")]
+    public void RejectsChangedEdgeToolOutput(string change, string diagnostic)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var fake = new FakeChdman();
+        const string stem = "cd-edge-subcode";
+        if (change == "projection") fake.ChangeLogical(stem, FakeChdman.Corrupt(CdEdgeFixtures.Logical(stem)));
+        else if (change == "metadata") fake.ChangeHeader(stem, header => header with { TrackMetadata = ["wrong metadata"] });
+        else if (change == "raw-hash") fake.ChangeHeader(stem, header => header with { RawSha1 = Flip(header.RawSha1) });
+        else if (change == "verification") fake.Respond(stem + ".chd", "Raw SHA1 verification successful!\n");
+        else
+        {
+            byte[] raw = File.ReadAllBytes(Path.Combine(fake.Prepared, stem + ".extracted.toc.bin"));
+            if (change == "length") raw = raw[..^1];
+            else raw[8 * 2448 + (change == "subcode" ? 2352 : 0)] ^= 1;
+            fake.Replace(stem + ".extracted.toc.bin", raw);
+        }
+        Assert.Equal(diagnostic, fake.Run().Failure.Message);
     }
 
     /// <summary>Each negative case must report its own diagnostic; another case's rejection does not stand in for it.</summary>

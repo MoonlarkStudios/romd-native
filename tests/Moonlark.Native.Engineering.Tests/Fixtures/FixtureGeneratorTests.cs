@@ -23,6 +23,25 @@ public sealed class FixtureGeneratorTests
         Assert.Equal("66ef5fd87220361ff4aff84dc5c3e4b48dd9ec9955c03662bbf850a6b2fdc192", Sha256(SyntheticSources.CdSubcode()));
     }
 
+    /// <summary>V2 source identities are new and pinned independently of historical reviewer bytes.</summary>
+    [Theory]
+    [InlineData("cd-edge-track1.bin", 39984, "ee283c3a901c7e4a572972b59054ce9d3f48ca52e91fcfec66ae1cc0af7b8c46")]
+    [InlineData("cd-edge-track2.bin", 30576, "229e3871ab8966be9d9141de5537e8567842fccb1c1e334cc5d72a1a2b3c213a")]
+    [InlineData("cd-edge-track3.bin", 21168, "f46596a3aff5199736ed469cefe4d53263871d6b3db5cc26dce4a5532143cdbe")]
+    [InlineData("cd-edge-single.bin", 91728, "1af2bb031922ce4ef01f6bce50bea57591ff54ee188844d0007ca50d97d50c34")]
+    [InlineData("cd-edge-sub1.bin", 19584, "a342821c1f6ead5d9ef164b18c07be8b5ee899d2e1a85375b0c3192d298495c4")]
+    [InlineData("cd-edge-sub2.bin", 14688, "d2c1a85231eb955e2b9d27f250b626669cda80548956e1dea229651e3a5b0149")]
+    [InlineData("cd-edge-multi.cue", 263, "eacba4a8fad664c041c65505da9702338d606083932d214154ba5360cfa95186")]
+    [InlineData("cd-edge-partial.cue", 171, "8b723c44ec32f39a798a645b5c07d79b71aa611ebd9b3319008c2af7224c41e8")]
+    [InlineData("cd-edge-single.cue", 197, "ce26d6fa29e669727937af1274a02f21c1dee7b7f213317b18a3a3dfd5f6ab82")]
+    [InlineData("cd-edge-subcode.cue", 181, "953bfee1809711c28b122fcf59ac82d59f5d1e96fad86c9352db30aa680a0c7b")]
+    public void V2SourceIdentitiesAreStable(string name, int bytes, string sha256)
+    {
+        byte[] source = CdEdgeFixtures.Sources()[name];
+        Assert.Equal(bytes, source.Length);
+        Assert.Equal(sha256, Sha256(source));
+    }
+
     /// <summary>The DVD source is whole sectors with zero and duplicate hunks.</summary>
     [Fact]
     public void DvdSourceIsExactSectorLengthWithDuplicateAndZeroHunks()

@@ -22,7 +22,7 @@ internal sealed record FixtureFile(string Path, long Bytes, string Sha1, string 
 /// <summary>Generates deterministic synthetic CHDs with the pinned chdman and independent header/hash evidence.</summary>
 internal static class FixtureGenerator
 {
-    internal const string GeneratorVersion = "libchdr-synthetic/v1";
+    internal const string GeneratorVersion = "libchdr-synthetic/v2";
     internal const string ManifestName = "fixtures-manifest.json";
     internal static readonly ImmutableArray<string> DvdCodecs = ["lzma", "zlib", "huff", "flac", "zstd", "none"];
     internal static readonly ImmutableArray<string> CdCodecs = ["cdlz", "cdzl", "cdfl", "cdzs"];
@@ -50,6 +50,7 @@ internal static class FixtureGenerator
         File.WriteAllBytes(Path.Combine(output.Value, "dvd-source.iso"), SyntheticSources.Dvd());
         File.WriteAllBytes(Path.Combine(output.Value, "cd-source.bin"), SyntheticSources.Cd());
         File.WriteAllText(Path.Combine(output.Value, "cd-source.cue"), SyntheticSources.CdCue);
+        foreach ((string name, byte[] bytes) in CdEdgeFixtures.Sources()) File.WriteAllBytes(Path.Combine(output.Value, name), bytes);
         Result<(JsonArray Fixtures, JsonArray Negative)> evidence;
         using (var log = new StreamWriter(request.LogPath, append: false))
             evidence = Generate(new Session(tool, output.Value, env.Value, log));
@@ -60,7 +61,7 @@ internal static class FixtureGenerator
             ["synthetic"] = true,
             ["generatorVersion"] = GeneratorVersion,
             ["tool"] = receipt.Value,
-            ["sources"] = new JsonArray([.. SourceNames.Select(name => (JsonNode?)FixtureFile.Read(output.Value, name).ToJson())]),
+            ["sources"] = new JsonArray([.. SourceNames.Concat(CdEdgeFixtures.Sources().Keys).Select(name => (JsonNode?)FixtureFile.Read(output.Value, name).ToJson())]),
             ["fixtures"] = evidence.Value.Fixtures,
             ["negativeVerification"] = evidence.Value.Negative,
         };
@@ -113,6 +114,12 @@ internal static class FixtureGenerator
         Result<JsonObject> subcode = MakeSubcodeFixture(session);
         if (!subcode.Succeeded) return subcode.Failure;
         fixtures.Add(subcode.Value);
+        foreach (string stem in CdEdgeFixtures.Stems)
+        {
+            Result<JsonObject> edge = MakeEdgeFixture(session, stem);
+            if (!edge.Succeeded) return edge.Failure;
+            fixtures.Add(edge.Value);
+        }
         Result<JsonArray> negative = VerifyNegativeHashes(session);
         if (!negative.Succeeded) return negative.Failure;
         return (fixtures, negative.Value);
@@ -174,6 +181,45 @@ internal static class FixtureGenerator
             "cd-subcode.extracted.bin", source, "TOC frame/subcode bytes were not exactly recovered");
         if (!extracted.Succeeded) return extracted.Failure;
         return Evidence("cd", "cdlz", session, "cd-subcode", header.Value, logical, computed, verified: true, extracted.Value);
+    }
+
+    private static Result<JsonObject> MakeEdgeFixture(Session session, string stem)
+    {
+        Result<string> create = session.Run("createcd", "-i", stem + ".cue", "-o", stem + ".chd", "-c", "cdlz", "-hs", "19584", "-np", "1");
+        if (!create.Succeeded) return create.Failure;
+        Result<ChdHeader> header = ChdHeader.Read(session.PathOf(stem + ".chd"));
+        if (!header.Succeeded) return header.Failure;
+        if (Check.That(CdEdgeFixtures.MetadataMatches(stem, header.Value), "Edge fixture metadata mismatch") is { } metadata) return metadata;
+        Result<string> verification = session.Run("verify", "-i", stem + ".chd");
+        if (!verification.Succeeded) return verification.Failure;
+        if (Check.That(VerifySucceeded(verification.Value), "chdman did not verify both edge fixture hashes") is { } response) return response;
+        Result<string> raw = session.Run("extractraw", "-i", stem + ".chd", "-o", stem + ".logical");
+        if (!raw.Succeeded) return raw.Failure;
+        byte[] expected = CdEdgeFixtures.Logical(stem);
+        if (Check.That(header.Value.LogicalBytes == (ulong)expected.Length && header.Value.HunkBytes == 19584 && header.Value.UnitBytes == 2448
+            && File.ReadAllBytes(session.PathOf(stem + ".logical")).AsSpan().SequenceEqual(expected), "Edge fixture source projection mismatch") is { } projection) return projection;
+        FixtureFile logical = FixtureFile.Read(session.Output, stem + ".logical");
+        string computed = ChdHeader.ComputeOverallSha1(logical.Sha1, header.Value.Metadata);
+        if (Check.That(logical.Sha1 == header.Value.RawSha1 && computed == header.Value.OverallSha1, "Independent edge fixture hash mismatch") is { } mismatch) return mismatch;
+        if (stem == "cd-edge-subcode")
+        {
+            string extractedName = stem + ".extracted.toc.bin";
+            Result<string> toc = session.Run("extractcd", "-i", stem + ".chd", "-o", stem + ".extracted.toc", "-ob", extractedName);
+            if (!toc.Succeeded) return toc.Failure;
+            byte[] recovered = File.ReadAllBytes(session.PathOf(extractedName));
+            if (Check.That(recovered.Length == 14 * 2448, "Edge subcode extraction length mismatch") is { } length) return length;
+            CdEdgeFixtures.SwapSubcodeAudio(recovered);
+            if (Check.That(recovered.AsSpan().SequenceEqual(CdEdgeFixtures.Source(stem)), "Edge CD source bytes were not exactly recovered") is { } recovery) return recovery;
+            File.WriteAllBytes(session.PathOf(stem + ".extracted.bin"), recovered);
+            JsonObject evidence = Evidence("cd", "cdlz", session, stem, header.Value, logical, computed, verified: true, FixtureFile.Read(session.Output, stem + ".extracted.bin"));
+            evidence["rawExtracted"] = FixtureFile.Read(session.Output, extractedName).ToJson();
+            evidence["recoveryTransform"] = "swap-audio-16-after-track1";
+            return evidence;
+        }
+        Result<FixtureFile> extracted = Recover(session, ["extractcd", "-i", stem + ".chd", "-o", stem + ".extracted.cue", "-ob", stem + ".extracted.bin"],
+            stem + ".extracted.bin", CdEdgeFixtures.Source(stem), "Edge CD source bytes were not exactly recovered");
+        if (!extracted.Succeeded) return extracted.Failure;
+        return Evidence("cd", "cdlz", session, stem, header.Value, logical, computed, verified: true, extracted.Value);
     }
 
     /// <summary>Extracts with the media's own command and requires the exact source bytes back.</summary>

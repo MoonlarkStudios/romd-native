@@ -160,6 +160,24 @@ public sealed class ChdFileTests
         stream.Dispose();
     }
 
+    /// <summary>A ReadAt whose decode fails leaves no stale bytes behind: libchdr copies a stored hunk into the cache before
+    /// its CRC check fails, so a later ReadAt of the hunk cached before must decode that hunk again.</summary>
+    [Fact]
+    public void FailedDecodesNeverLeaveStaleBytesInTheReadAtCache()
+    {
+        byte[] bytes = CraftedChd.V5(CraftedChd.V5Entry.Stored, CraftedChd.V5Entry.Stored);
+        int second = bytes.AsSpan().IndexOf(Enumerable.Repeat(CraftedChd.Fill(1), CraftedChd.HunkBytes).ToArray());
+        bytes[second + 100] ^= 0xFF;
+        using ChdFile file = ChdFile.Open(new MemoryStream(bytes, false), false);
+        byte[] range = new byte[16];
+        Assert.Equal(range.Length, file.ReadAt(0, range));
+        Assert.True(range.AsSpan().IndexOfAnyExcept(CraftedChd.Fill(0)) < 0);
+        Assert.Equal(ChdError.DecompressionError, Assert.Throws<ChdException>(() => file.ReadAt(CraftedChd.HunkBytes, range)).Error);
+        Array.Clear(range);
+        Assert.Equal(range.Length, file.ReadAt(0, range));
+        Assert.True(range.AsSpan().IndexOfAnyExcept(CraftedChd.Fill(0)) < 0, "ReadAt returned bytes of the hunk whose decode failed");
+    }
+
     /// <summary>A hunk stored past the end of the source fails with ReadError from every kind of source, and the hunks
     /// before it still read.</summary>
     [Fact]

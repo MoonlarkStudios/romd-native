@@ -21,6 +21,7 @@ internal static class CommandRouter
         ["upstream update"] = UpstreamCommand.Update,
         ["chdman build"] = ChdmanCommand.Build,
         ["fixtures generate"] = FixturesCommand.Generate,
+        ["fixtures verify"] = FixturesCommand.Verify,
     };
 
     internal static int Run(IReadOnlyList<string> arguments, TextWriter output, TextWriter error)

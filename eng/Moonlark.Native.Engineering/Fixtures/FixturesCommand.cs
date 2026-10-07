@@ -9,6 +9,16 @@ internal static class FixturesCommand
 {
     internal const string DefaultOutput = "artifacts/fixtures/libchdr";
 
+    /// <summary>Checks transferred synthetic fixtures without executing their recorded tool.</summary>
+    internal static int Verify(IReadOnlyList<string> arguments, CommandContext context)
+    {
+        Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--directory"], required: ["--directory"]);
+        if (!parsed.Succeeded) return context.Report(parsed.Failure, "");
+        Result<JsonObject> result = FixtureVerification.Verify(context.Root, Path.GetFullPath(parsed.Value.Option("--directory")!));
+        return context.Report(result.Succeeded ? null : result.Failure,
+            "synthetic fixture inventory, file integrity and current pin agreement; tool executable not verified");
+    }
+
     /// <summary><c>fixtures generate --chdman PATH --manifest PATH --log PATH [--output PATH]</c>: generates synthetic CHDs and prints their manifest.</summary>
     internal static int Generate(IReadOnlyList<string> arguments, CommandContext context)
     {

@@ -10,6 +10,7 @@
     <Project Path="src/Moonlark.Libchdr.Native/Moonlark.Libchdr.Native.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Moonlark.Libchdr.Benchmarks/Moonlark.Libchdr.Benchmarks.csproj" />
     <Project Path="tests/Moonlark.Libchdr.CorpusRunner/Moonlark.Libchdr.CorpusRunner.csproj" />
     <Project Path="tests/Moonlark.Libchdr.Tests/Moonlark.Libchdr.Tests.csproj" />
     <Project Path="tests/Moonlark.Native.Engineering.Tests/Moonlark.Native.Engineering.Tests.csproj" />

@@ -38,7 +38,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON CACHE BOOL "" FORCE)
 set(CMAKE_C_STANDARD 11 CACHE STRING "" FORCE)
 set(CMAKE_C_STANDARD_REQUIRED ON CACHE BOOL "" FORCE)
 if(MSVC)
-  add_compile_options("/pathmap:${MOONLARK_SOURCE_ROOT}=/_/moonlark,${MOONLARK_UPSTREAM}=/_/moonlark/native/libchdr/upstream" /Brepro)
+  add_compile_options(/experimental:deterministic "/pathmap:${MOONLARK_SOURCE_ROOT}=/_/moonlark,${MOONLARK_UPSTREAM}=/_/moonlark/native/libchdr/upstream" /Brepro)
 else()
   # Later maps win, so build-tree paths below the source root map to a fixed prefix.
   get_filename_component(moonlark_generated_dir "${MOONLARK_BUILD_INFO_HEADER}" DIRECTORY)

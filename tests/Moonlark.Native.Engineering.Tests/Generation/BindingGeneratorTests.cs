@@ -35,6 +35,32 @@ public sealed class BindingGeneratorTests
         Assert.Contains("git -C", File.ReadAllText(Path.Combine(fixture.Output, BindingGenerator.LogFile)), StringComparison.Ordinal);
     }
 
+    /// <summary>Enum portability reaches the real tool boundary as separate literal arguments and raw output stays untouched.</summary>
+    [Fact]
+    public void EnumPortabilityOptionsReachToolWithoutChangingItsOutput()
+    {
+        using var fixture = new GenerationFixture();
+        Result<GenerationResult> result = fixture.Run(check: false, command =>
+        {
+            string[] Values(string option) => Enumerable.Range(0, command.Count - 1)
+                .Where(index => command[index] == option).Select(index => command[index + 1]).ToArray();
+            Assert.Equal<string>(["chd_error=int"], Values("--with-type"));
+            Assert.Equal<string>(["unsigned int"], Values("--native-type-names-to-strip"));
+            return fixture.WriteOutput(command, GenerationFixture.CommittedBindings);
+        });
+        Assert.True(result.Succeeded, result.Succeeded ? "" : result.Failure.Message);
+        Assert.Equal(GenerationFixture.CommittedBindings, File.ReadAllText(fixture.Bindings));
+    }
+
+    /// <summary>Enum annotation stripping must not corrupt fixed-width names or signed callback signatures.</summary>
+    [Theory]
+    [InlineData("uint32_t")]
+    [InlineData("uint64_t")]
+    [InlineData("uint64_t (*)(void *)")]
+    [InlineData("int (*)(void *, int64_t, int)")]
+    public void GeneratedEnumPortabilityPreservesOtherNativeAnnotations(string nativeType) =>
+        Assert.Contains($"[NativeTypeName(\"{nativeType}\")]", GenerationFixture.CommittedBindings, StringComparison.Ordinal);
+
     /// <summary>Check mode passes on matching tracked files and never rewrites them.</summary>
     [Fact]
     public void CheckModeMatchesWithoutWritingTrackedFiles()

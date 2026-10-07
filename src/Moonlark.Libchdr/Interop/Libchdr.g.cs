@@ -48,8 +48,7 @@ internal unsafe partial struct core_file
     public delegate* unmanaged[Cdecl]<core_file*, long, int, int> fseek;
 }
 
-[NativeTypeName("unsigned int")]
-internal enum chd_error : uint
+internal enum chd_error
 {
     CHDERR_NONE,
     CHDERR_NO_INTERFACE,

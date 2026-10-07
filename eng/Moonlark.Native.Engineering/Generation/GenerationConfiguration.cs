@@ -19,6 +19,8 @@ internal sealed record GenerationConfiguration(
     string CallingConvention,
     ImmutableArray<string> Remaps,
     ImmutableArray<string> TypeRemaps,
+    ImmutableArray<string> TypeOverrides,
+    ImmutableArray<string> NativeTypeNamesToStrip,
     ImmutableArray<string> Config,
     ImmutableArray<string> Generate,
     string OutputDirectory,
@@ -54,6 +56,10 @@ internal sealed record GenerationConfiguration(
             "chd_core_file_callbacks_and_argp=core_file_callbacks_and_argp",
             "chd_core_file=core_file",
         ],
+        // Native chd_error signedness varies by host; its measured width, values and calls remain ABI-checked.
+        // Use a common signed backing; strip only the unsigned spelling so fixed-width and callback names remain intact.
+        TypeOverrides: ["chd_error=int"],
+        NativeTypeNamesToStrip: ["unsigned int"],
         Config: ["codegen=latest", "file=single"],
         Generate: ["file-scoped-namespaces", "helper-types", "funcs-with-body=false", "using-statics-for-enums=false"],
         OutputDirectory: "artifacts/generation/libchdr",
@@ -77,6 +83,8 @@ internal sealed record GenerationConfiguration(
         .. Option("--with-callconv", [CallingConvention]),
         .. Option("--remap", Remaps),
         .. Option("--remap-type", TypeRemaps),
+        .. Option("--with-type", TypeOverrides),
+        .. Option("--native-type-names-to-strip", NativeTypeNamesToStrip),
         .. Option("--config", Config),
         .. Option("--generate", Generate),
         .. Option("--output", [Output]),

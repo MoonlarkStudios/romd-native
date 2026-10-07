@@ -37,6 +37,8 @@ public sealed class GenerationConfigurationTests
         "--remap-type", "chd_core_file_callbacks=core_file_callbacks",
         "--remap-type", "chd_core_file_callbacks_and_argp=core_file_callbacks_and_argp",
         "--remap-type", "chd_core_file=core_file",
+        "--with-type", "chd_error=int",
+        "--native-type-names-to-strip", "unsigned int",
         "--config", "codegen=latest",
         "--config", "file=single",
         "--generate", "file-scoped-namespaces",
@@ -65,6 +67,15 @@ public sealed class GenerationConfigurationTests
     [Fact]
     public void PlainCharPointerRemapIsHostIndependent() =>
         Assert.Single(Pairs(Arguments), pair => pair == ("--remap", "char=sbyte"));
+
+    /// <summary>The signed enum backing is stable while only the unsigned host backing annotation is removed.</summary>
+    [Fact]
+    public void EnumPortabilityOptionsAreExplicitAndClosed()
+    {
+        (string Option, string Value)[] pairs = Pairs(Arguments);
+        Assert.Equal<string>(["chd_error=int"], Values(pairs, "--with-type"));
+        Assert.Equal<string>(["unsigned int"], Values(pairs, "--native-type-names-to-strip"));
+    }
 
     /// <summary>Includes and inputs are exclusively the verified upstream tree, the entry header and the explicit shim.</summary>
     [Fact]
@@ -98,7 +109,8 @@ public sealed class GenerationConfigurationTests
             Assert.StartsWith("-", pair.Option, StringComparison.Ordinal);
             Assert.NotEmpty(pair.Value);
             Assert.False("@-#".Contains(pair.Value[0], StringComparison.Ordinal), pair.Value);
-            Assert.False(pair.Value.Any(char.IsWhiteSpace), pair.Value);
+            if (pair.Value.Any(char.IsWhiteSpace))
+                Assert.Equal(("--native-type-names-to-strip", "unsigned int"), pair);
         });
     }
 

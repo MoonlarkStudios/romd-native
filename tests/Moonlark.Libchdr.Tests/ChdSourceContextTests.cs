@@ -30,11 +30,46 @@ public sealed unsafe class ChdSourceContextTests
         Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 3, 3, context.UserData));
         for (int index = 0; index < 5; index++) Assert.Equal((byte)index, buffer[index]);
         Assert.Equal((nuint)0, context.Callbacks->fread(buffer, 1, 1, context.UserData));
-        Assert.Equal(5, source.LastOffset);
         Assert.Equal(0, context.Callbacks->fseek(context.UserData, -1, (int)SeekOrigin.Current));
         Assert.Equal((nuint)1, context.Callbacks->fread(buffer, 1, 1, context.UserData));
         Assert.Equal((byte)4, buffer[0]);
         context.ThrowIfFaulted();
+    }
+
+    /// <summary>No source is asked for bytes at or past its length, wherever a malformed CHD points: reads there return zero,
+    /// and a read across the end asks only for the bytes before it.</summary>
+    [Fact]
+    public void SourcesAreNeverReadPastTheirLength()
+    {
+        using var source = new Source(10) { RejectPastLength = true };
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte[] managed = new byte[4];
+        Assert.Equal(0, context.ReadSourceAt(10, managed));
+        Assert.Equal(0, context.ReadSourceAt(1L << 40, managed));
+        Assert.Equal(0, source.ReadCalls);
+        Assert.Equal(2, context.ReadSourceAt(8, managed));
+        Assert.Equal((byte)9, managed[1]);
+        byte* native = stackalloc byte[4];
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, 1L << 32, (int)SeekOrigin.Begin));
+        Assert.Equal((nuint)0, context.Callbacks->fread(native, 1, 4, context.UserData));
+        Assert.Equal(0, context.Callbacks->fseek(context.UserData, 7, (int)SeekOrigin.Begin));
+        Assert.Equal((nuint)1, context.Callbacks->fread(native, 3, 2, context.UserData));
+        context.ThrowIfFaulted();
+    }
+
+    /// <summary>The length is read from the source once and reused, so every read is bounded by the length libchdr was
+    /// given and no read pays for another Length call.</summary>
+    [Fact]
+    public void SourceLengthIsReadOnce()
+    {
+        using var source = new Source(10);
+        using var context = new ChdSourceContext(source, leaveOpen: true);
+        byte* buffer = stackalloc byte[2];
+        Assert.Equal(10UL, context.Callbacks->fsize(context.UserData));
+        Assert.Equal((nuint)2, context.Callbacks->fread(buffer, 1, 2, context.UserData));
+        Assert.Equal(2, context.ReadSourceAt(4, new byte[2]));
+        Assert.Equal(10, context.SourceLength);
+        Assert.Equal(1, source.LengthCalls);
     }
 
     /// <summary>Native positions belong to each context rather than a shared data source.</summary>
@@ -258,19 +293,27 @@ public sealed unsafe class ChdSourceContextTests
     {
         internal int ReadCalls { get; private set; }
         internal int CloseCount { get; private set; }
-        internal long LastOffset { get; private set; }
         internal int? InvalidRead { get; set; }
         internal int? FailReadCall { get; set; }
         internal bool FailLength { get; set; }
         internal bool FailClose { get; set; }
+        internal bool RejectPastLength { get; set; }
+        internal int LengthCalls { get; private set; }
         internal IOException ReadFault { get; } = new("Read failed.");
         internal IOException LengthFault { get; } = new("Length failed.");
         internal IOException CloseFault { get; } = new("Close failed.");
-        public long Length => FailLength ? throw LengthFault : length;
+        public long Length
+        {
+            get
+            {
+                LengthCalls++;
+                return FailLength ? throw LengthFault : length;
+            }
+        }
         public int Read(long offset, Span<byte> destination)
         {
             ReadCalls++;
-            LastOffset = offset;
+            if (RejectPastLength && offset + destination.Length > length) throw new ArgumentOutOfRangeException(nameof(offset));
             if (ReadCalls == FailReadCall) throw ReadFault;
             if (InvalidRead is { } invalid) return invalid;
             int read = (int)Math.Min(Math.Min(destination.Length, maximumRead), Math.Max(0, length - offset));

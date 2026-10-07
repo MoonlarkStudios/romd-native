@@ -54,16 +54,17 @@ public sealed class ChdReadAheadTests
         }
     }
 
-    /// <summary>Clamping needs the source length, so it is read once more only when read-ahead is requested.</summary>
+    /// <summary>The source length is read once, whether or not a read-ahead ceiling needs it for clamping.</summary>
     [Fact]
-    public void OnlyARequestedCeilingReadsTheSourceLength()
+    public void TheSourceLengthIsReadOnceWithOrWithoutACeiling()
     {
         byte[] bytes = File.ReadAllBytes(NativeTestEnvironment.Fixture(Compressed + ".chd"));
         var plain = new LengthCountingSource(bytes);
         var clamped = new LengthCountingSource(bytes);
         using (ChdFile.Open(plain, false)) { }
         using (ChdFile.Open(clamped, false, new ChdOpenOptions { ReadAheadBytes = 1UL << 20 })) { }
-        Assert.Equal(plain.LengthReads + 1, clamped.LengthReads);
+        Assert.Equal(1, plain.LengthReads);
+        Assert.Equal(1, clamped.LengthReads);
     }
 
     private sealed class LengthCountingSource(byte[] bytes) : IChdDataSource

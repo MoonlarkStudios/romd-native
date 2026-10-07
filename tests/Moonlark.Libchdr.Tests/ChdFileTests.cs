@@ -6,6 +6,9 @@ namespace Moonlark.Libchdr.Tests;
 /// <summary>Qualifies chd File Tests.</summary>
 public sealed class ChdFileTests
 {
+    /// <summary>Loads the digest-verified native test asset.</summary>
+    public ChdFileTests() => _ = NativeTestEnvironment.Root;
+
     /// <summary>Qualifies decodes Every Hunk And Range Exactly.</summary>
     [Theory]
     [InlineData("dvd-lzma")]
@@ -122,7 +125,6 @@ public sealed class ChdFileTests
     [Fact]
     public void SourceFaultEscapesTryOpenWithOriginalIdentityEvenIfCleanupFails()
     {
-        _ = NativeTestEnvironment.Root;
         var error = new ChdException(ChdError.ReadError, "source sentinel");
         var source = new TestSource([], error, new IOException("cleanup sentinel"));
         Assert.Same(error, Assert.Throws<ChdException>(() => ChdFile.TryOpen(source, false, out _, out _)));
@@ -156,6 +158,77 @@ public sealed class ChdFileTests
         using (ChdFile file = ChdFile.Open(stream, false)) _ = file.Header;
         Assert.False(stream.CanRead);
         stream.Dispose();
+    }
+
+    /// <summary>A hunk stored past the end of the source fails with ReadError from every kind of source, and the hunks
+    /// before it still read.</summary>
+    [Fact]
+    public void HunksStoredPastTheSourceFailAsReadErrors()
+    {
+        const int hunkBytes = 4096;
+        // An uncompressed v5 map: each 32-bit entry is the hunk's offset in hunks. Hunk 1 claims to sit at 4 GiB.
+        byte[] bytes = new byte[2 * hunkBytes];
+        "MComprHD"u8.CopyTo(bytes);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(8), 124);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(12), 5);
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(32), 2 * hunkBytes);
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(40), 124);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(56), hunkBytes);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(60), 512);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(124), 1);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(128), 1U << 20);
+        bytes.AsSpan(hunkBytes).Fill(0x5A);
+        WithEverySource(bytes, (opens, _) =>
+        {
+            foreach (Func<ChdFile> open in opens)
+            {
+                using ChdFile file = open();
+                byte[] hunk = new byte[hunkBytes];
+                file.ReadHunk(0, hunk);
+                Assert.True(hunk.AsSpan().IndexOfAnyExcept((byte)0x5A) < 0);
+                Assert.Equal(ChdError.ReadError, Assert.Throws<ChdException>(() => file.ReadHunk(1, hunk)).Error);
+            }
+        });
+    }
+
+    /// <summary>A header whose map lies past the end of the source fails to open with ReadError from every kind of source,
+    /// and TryOpen reports it rather than throwing.</summary>
+    [Fact]
+    public void HeadersPointingPastTheSourceFailToOpenAsReadErrors()
+    {
+        byte[] bytes = CraftedChd.V5(CraftedChd.V5Entry.Stored);
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(40), 1UL << 32);
+        WithEverySource(bytes, (opens, tryOpens) =>
+        {
+            foreach (Func<ChdFile> open in opens) Assert.Equal(ChdError.ReadError, Assert.Throws<ChdException>(() => open()).Error);
+            foreach (Func<ChdError> tryOpen in tryOpens) Assert.Equal(ChdError.ReadError, tryOpen());
+        });
+    }
+
+    /// <summary>Runs <paramref name="check"/> with Open and TryOpen over a path, a MemoryStream, which cannot be positioned
+    /// beyond int.MaxValue, and a source that throws when sliced past its end, as a simple custom source does. TryOpen returns its
+    /// rejection error, or None after disposing a file that opened.</summary>
+    private static void WithEverySource(byte[] bytes, Action<Func<ChdFile>[], Func<ChdError>[]> check)
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(path, bytes);
+            check(
+                [() => ChdFile.Open(path), () => ChdFile.Open(new MemoryStream(bytes, false), false), () => ChdFile.Open(new TestSource(bytes), false)],
+                [
+                    () => Rejection(ChdFile.TryOpen(path, out ChdFile? file, out ChdError error), file, error),
+                    () => Rejection(ChdFile.TryOpen(new MemoryStream(bytes, false), false, out ChdFile? file, out ChdError error), file, error),
+                    () => Rejection(ChdFile.TryOpen(new TestSource(bytes), false, out ChdFile? file, out ChdError error), file, error),
+                ]);
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static ChdError Rejection(bool opened, ChdFile? file, ChdError error)
+    {
+        file?.Dispose();
+        return opened ? ChdError.None : error;
     }
 
     /// <summary>Qualifies rejects Malformed Envelope Without Entering Native Parser.</summary>

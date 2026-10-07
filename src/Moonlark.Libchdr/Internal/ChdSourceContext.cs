@@ -14,6 +14,7 @@ internal sealed unsafe class ChdSourceContext : IDisposable
     private core_file_callbacks* _callbacks;
     private GCHandle _root;
     private long _position;
+    private long _length = -1;
     private int _closed;
     private int _disposed;
     private Exception? _fault;
@@ -48,21 +49,30 @@ internal sealed unsafe class ChdSourceContext : IDisposable
     {
         get { ThrowIfUnavailable(); return (void*)GCHandle.ToIntPtr(_root); }
     }
+    /// <summary>The source's length, read once and reused: a source must not change while open, so every read is
+    /// bounded by the length libchdr was given.</summary>
     internal long SourceLength
     {
         get
         {
             ThrowIfUnavailable();
+            if (_length >= 0) return _length;
             long length = _source.Length;
             if (length < 0) throw new IOException("The CHD data source returned a negative length.");
+            _length = length;
             return length;
         }
     }
+    /// <summary>Reads at an absolute offset, never asking the source for bytes at or past its length: a malformed header or
+    /// map can name an offset past the end, and some sources cannot even be positioned there.</summary>
     internal int ReadSourceAt(long offset, Span<byte> destination)
     {
         ThrowIfUnavailable();
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         _ = checked(offset + destination.Length);
+        long available = SourceLength - offset;
+        if (available <= 0) return 0;
+        if (available < destination.Length) destination = destination[..(int)available];
         int read = _source.Read(offset, destination);
         if ((uint)read > (uint)destination.Length)
             throw new IOException("The CHD data source returned an invalid byte count.");

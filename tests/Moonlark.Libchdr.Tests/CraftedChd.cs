@@ -141,6 +141,14 @@ internal static class CraftedChd
         return file;
     }
 
+    /// <summary>Moves v4 entry <paramref name="index"/> to <paramref name="offset"/> in place, keeping its length, CRC and
+    /// flags, and returns the same array.</summary>
+    internal static byte[] WithV4Offset(byte[] v4, int index, ulong offset)
+    {
+        BinaryPrimitives.WriteUInt64BigEndian(v4.AsSpan(V4HeaderBytes + index * 16), offset);
+        return v4;
+    }
+
     /// <summary>A v2 file whose 8-byte entries are stored when their length equals a hunk.</summary>
     internal static byte[] V2(uint codec, params bool[] storedEntries)
     {

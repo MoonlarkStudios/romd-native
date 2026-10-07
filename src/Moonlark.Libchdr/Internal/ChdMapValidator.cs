@@ -10,8 +10,10 @@ namespace Moonlark.Libchdr.Internal;
 /// without a codec and v5 stored entries whose 24-bit length truncates the hunk size; writes eight bytes for a v3/v4
 /// MINI entry whatever the hunk size; follows self-references without a cycle bound; dereferences a missing parent for
 /// v1–v4 parent entries; accepts any v5 codec in a v1–v4 header, where entries may carry no CRC; and its A/V decoder
-/// can succeed with most of a hunk unwritten. v5 is checked on the map libchdr itself decoded; v1–v4 on the
-/// fixed-size entries libchdr read from the source, which must not change while the file is open.
+/// can succeed with most of a hunk unwritten. Its v1–v4 open check and read-ahead window checks add an entry's offset and
+/// length without a wrap guard, so an entry whose end wraps past 2^64 opens and copies from before the window. v5 is
+/// checked on the map libchdr itself decoded; v1–v4 on the fixed-size entries libchdr read from the source, which must
+/// not change while the file is open.
 /// </remarks>
 internal static unsafe class ChdMapValidator
 {
@@ -82,13 +84,15 @@ internal static unsafe class ChdMapValidator
         {
             ChdMetadataIndex.ReadExactly(source, header->length, buffer.AsSpan(0, (int)mapBytes));
             var map = new LegacyMap(buffer, entryBytes, header->hunkbytes, header->totalhunks);
+            ulong sourceBytes = (ulong)source.SourceLength;
             for (uint index = 0; index < map.Count; index++)
             {
                 switch (map.Kind(index))
                 {
                     case LegacyCompressed when codec == 0: throw Invalid(index, "is compressed but the header names no codec");
+                    case LegacyCompressed or LegacyUncompressed: ValidateExtent(map, index, sourceBytes); break;
                     case LegacyMini when header->hunkbytes < MiniBytes: throw Invalid(index, $"is MINI, which writes {MiniBytes} bytes into a {header->hunkbytes}-byte hunk");
-                    case LegacyCompressed or LegacyUncompressed or LegacyMini: break;
+                    case LegacyMini: break;
                     case LegacySelf: ResolveChain(map, index); break;
                     case LegacyParent: throw ParentEntry(index);
                     default: throw Invalid(index, $"has unknown entry type {map.Kind(index)}");
@@ -96,6 +100,16 @@ internal static unsafe class ChdMapValidator
             }
         }
         finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
+    }
+
+    /// <summary>Applies libchdr's open check, that an entry's offset plus length lies within the source, without its wrap.</summary>
+    private static void ValidateExtent(in LegacyMap map, uint index, ulong sourceBytes)
+    {
+        ulong offset = map.Target(index);
+        uint length = map.Length(index);
+        if (length > sourceBytes || offset > sourceBytes - length)
+            throw new ChdValidationException(ChdError.InvalidFile,
+                $"validate map hunk {index}: entry stores {length} bytes at offset {offset}, past the end of the {sourceBytes}-byte source");
     }
 
     /// <summary>Follows a self-reference to a hunk that is not one, within the depth bound; every hop is range checked.</summary>
@@ -145,11 +159,15 @@ internal static unsafe class ChdMapValidator
     }
 
     /// <summary>The on-disk v1–v4 map, decoded exactly as libchdr's map_extract and map_extract_old do.</summary>
+    /// <remarks>The offset field is the data offset, the self-reference target or the MINI value, by entry kind.</remarks>
     private readonly struct LegacyMap(byte[] entries, int entryBytes, uint hunkBytes, uint count) : IHunkMap
     {
         public uint Count => count;
         public bool IsSelf(uint index) => Kind(index) == LegacySelf;
         public ulong Target(uint index) => entryBytes == 16 ? Raw(index) : Raw(index) & 0xFFFFFFFFFFFUL;
+        internal uint Length(uint index) => entryBytes == 16
+            ? BinaryPrimitives.ReadUInt16BigEndian(entries.AsSpan((int)index * 16 + 12, 2)) | (uint)entries[(int)index * 16 + 14] << 16
+            : (uint)(Raw(index) >> 44);
         internal int Kind(uint index) => entryBytes == 16
             ? entries[(int)index * 16 + 15] & LegacyTypeMask
             : Raw(index) >> 44 == hunkBytes ? LegacyUncompressed : LegacyCompressed;

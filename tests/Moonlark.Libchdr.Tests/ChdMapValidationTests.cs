@@ -9,6 +9,7 @@ public sealed class ChdMapValidationTests
 {
     private const int MaxDepth = 16;
     private const ulong MiniValue = 0x0102030405060708;
+    private const ulong ReadAheadBytes = 64 * 1024;
 
     /// <summary>Loads the digest-verified native test asset.</summary>
     public ChdMapValidationTests() => _ = NativeTestEnvironment.Root;
@@ -108,6 +109,24 @@ public sealed class ChdMapValidationTests
     [InlineData("v4-lzma-fourcc", ChdError.InvalidData)]
     public void RejectsCodecsLibchdrDecodesUnsafely(string name, ChdError expected) => AssertRejected(name, expected);
 
+    /// <summary>A v1–v4 entry whose stored bytes end past the source is rejected as libchdr's own open check rejects it,
+    /// with or without read-ahead. That check and the read-ahead window checks add the offset and length without a wrap
+    /// guard, so an entry whose end wraps past 2^64 would otherwise open and copy from before the window.</summary>
+    [Theory]
+    [InlineData("v4-stored-offset-wraps")]
+    [InlineData("v4-zlib-offset-wraps")]
+    [InlineData("v4-stored-straddles-eof")]
+    [InlineData("v4-stored-beyond-eof")]
+    [InlineData("v4-stored-end-at-long-max")]
+    [InlineData("v4-zlib-beyond-eof")]
+    public void RejectsLegacyEntriesEndingPastTheSource(string name)
+    {
+        AssertRejected(name, ChdError.InvalidFile);
+        ChdException failure = Assert.Throws<ChdException>(() =>
+            ChdFile.Open(new MemoryStream(Malformed(name), false), false, new ChdOpenOptions { ReadAheadBytes = ReadAheadBytes }));
+        Assert.Equal(ChdError.InvalidFile, failure.Error);
+    }
+
     /// <summary>A rejection with leaveOpen preserves the caller's stream.</summary>
     [Fact]
     public void RejectionWithLeaveOpenPreservesTheStream()
@@ -176,8 +195,17 @@ public sealed class ChdMapValidationTests
         "v4-zlib-fourcc" => V4(0x7A6C6962, LegacyEntry.Stored),
         "v4-lzma-fourcc" => V4(0x6C7A6D61, LegacyEntry.Stored),
         "v2-compressed-without-codec" => V2(0, true, false),
+        "v4-stored-offset-wraps" => WithV4Offset(V4(0, LegacyEntry.Stored, LegacyEntry.Stored), 1, ulong.MaxValue),
+        "v4-zlib-offset-wraps" => WithV4Offset(V4(1, LegacyEntry.Deflated, LegacyEntry.Deflated), 1, ulong.MaxValue - 8),
+        "v4-stored-straddles-eof" => WithV4Offset(V4(0, LegacyEntry.Stored, LegacyEntry.Stored), 1, StoredV4Bytes(2) - HunkBytes / 2),
+        "v4-stored-beyond-eof" => WithV4Offset(V4(0, LegacyEntry.Stored, LegacyEntry.Stored), 1, StoredV4Bytes(2) + HunkBytes),
+        "v4-stored-end-at-long-max" => WithV4Offset(V4(0, LegacyEntry.Stored, LegacyEntry.Stored), 1, long.MaxValue - HunkBytes),
+        "v4-zlib-beyond-eof" => WithV4Offset(V4(1, LegacyEntry.Deflated, LegacyEntry.Deflated), 1, 1UL << 40),
         _ => throw new ArgumentOutOfRangeException(nameof(name)),
     };
+
+    /// <summary>The byte length of a v4 file of <paramref name="entries"/> stored hunks.</summary>
+    private static ulong StoredV4Bytes(int entries) => (ulong)V4(0, [.. Enumerable.Repeat(LegacyEntry.Stored, entries)]).Length;
 
     /// <summary>Names <paramref name="codec"/> in a v5 header codec slot after slot 0.</summary>
     private static byte[] WithCodecSlot(byte[] v5, int slot, string codec)

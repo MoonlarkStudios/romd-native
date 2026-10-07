@@ -23,6 +23,8 @@ internal static class CommandRouter
         ["chdman build"] = ChdmanCommand.Build,
         ["fixtures generate"] = FixturesCommand.Generate,
         ["fixtures verify"] = FixturesCommand.Verify,
+        ["package candidate"] = PackagingCommand.Candidate,
+        ["package consumer"] = PackagingCommand.Consumer,
         ["qualification linux"] = QualificationCommand.Linux,
         ["qualification windows"] = QualificationCommand.Windows,
         ["qualification subjects"] = QualificationCommand.Subjects,

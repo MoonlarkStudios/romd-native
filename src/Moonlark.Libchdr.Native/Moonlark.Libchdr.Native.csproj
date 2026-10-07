@@ -4,8 +4,17 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <IsPackable>false</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression></PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <Description>Pinned libchdr native assets; upstream $(LibchdrUpstreamVersion), commit $(LibchdrUpstreamCommit).</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <None Update="licenses/LICENSE.txt" Pack="true" PackagePath="/" />
+    <None Update="licenses/source-inventory.json" Pack="true" PackagePath="licenses/" />
+    <None Include="../../THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
   <Target Name="RejectUnqualifiedNativePackage" BeforeTargets="Pack">
     <Error Text="Native packages require qualified binaries, manifests, licenses and attestations for every supported RID." />
   </Target>

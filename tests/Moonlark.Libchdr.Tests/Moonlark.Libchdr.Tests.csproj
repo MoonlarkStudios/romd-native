@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Moonlark.Libchdr/Moonlark.Libchdr.csproj" />
+    <!-- Built and copied beside the tests so malformed inputs run in a separate process. -->
+    <ProjectReference Include="../Moonlark.Libchdr.CorpusRunner/Moonlark.Libchdr.CorpusRunner.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />

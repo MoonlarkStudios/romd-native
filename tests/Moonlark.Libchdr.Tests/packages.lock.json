@@ -95,6 +95,12 @@
       },
       "moonlark.libchdr": {
         "type": "Project"
+      },
+      "moonlark.libchdr.corpusrunner": {
+        "type": "Project",
+        "dependencies": {
+          "Moonlark.Libchdr": "[1.0.0-preview.1, )"
+        }
       }
     }
   }

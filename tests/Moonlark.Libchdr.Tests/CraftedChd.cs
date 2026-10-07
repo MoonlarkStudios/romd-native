@@ -46,7 +46,12 @@ internal static class CraftedChd
     internal static byte[] V5(params V5Entry[] entries) => V5Sized(HunkBytes, "zlib", entries);
 
     /// <summary>A v5 file with the given hunk size and slot-0 codec FourCC.</summary>
-    internal static byte[] V5Sized(int hunkBytes, string codec, params V5Entry[] entries)
+    internal static byte[] V5Sized(int hunkBytes, string codec, params V5Entry[] entries) => V5Filled(hunkBytes, codec, Fill, entries);
+
+    /// <summary>A v5 file whose stored hunks hold only zero bytes, so their CRC is the CRC of an all-zero hunk.</summary>
+    internal static byte[] V5Zeroed(int hunkBytes, string codec, params V5Entry[] entries) => V5Filled(hunkBytes, codec, _ => 0, entries);
+
+    private static byte[] V5Filled(int hunkBytes, string codec, Func<int, byte> fill, V5Entry[] entries)
     {
         // libchdr's bit reader refills only up to 24 buffered bits, so wider fields misdecode; chdman sizes them to the map.
         const int selfBits = 24, parentBits = 8, lengthBits = 16;
@@ -55,7 +60,7 @@ internal static class CraftedChd
         foreach (V5Entry entry in entries) bits.Write(entry.Type, 4);
         foreach ((V5Entry entry, int index) in entries.Select((entry, index) => (entry, index)))
         {
-            if (entry.Type == V5None) bits.Write(Crc16(StoredHunk(index, hunkBytes)), 16);
+            if (entry.Type == V5None) bits.Write(Crc16(StoredHunk(hunkBytes, fill(index))), 16);
             else if (entry.Type <= 3) { bits.Write(0, lengthBits); bits.Write(0, 16); }
             else if (entry.Type == V5Self) bits.Write((uint)entry.Target, selfBits);
             else if (entry.Type == V5Parent) bits.Write((uint)entry.Target, parentBits);
@@ -74,7 +79,7 @@ internal static class CraftedChd
             raw[0] = entry.Type;
             if (entry.Type == V5None)
             {
-                byte[] data = StoredHunk(index, hunkBytes);
+                byte[] data = StoredHunk(hunkBytes, fill(index));
                 data.CopyTo(file, (int)current);
                 // libchdr decodes the length into 24 bits, so the map CRC covers the truncated value.
                 WriteUInt24(raw[1..], (uint)hunkBytes);
@@ -176,7 +181,9 @@ internal static class CraftedChd
         return file;
     }
 
-    private static byte[] StoredHunk(int index, int hunkBytes) => Enumerable.Repeat(Fill(index), hunkBytes).ToArray();
+    private static byte[] StoredHunk(int index, int hunkBytes) => StoredHunk(hunkBytes, Fill(index));
+
+    private static byte[] StoredHunk(int hunkBytes, byte fill) => Enumerable.Repeat(fill, hunkBytes).ToArray();
 
     /// <summary>Raw deflate, the stream format libchdr's legacy zlib codec inflates.</summary>
     private static byte[] Deflate(byte[] data)

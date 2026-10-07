@@ -43,24 +43,71 @@ public sealed class WindowsToolchainTests
         Assert.DoesNotContain("NETFX", JsonFields.Compact(result.Value.Recipe), StringComparison.Ordinal);
     }
 
+    /// <summary>The observed x64 NETFX library directory is preserved as bootstrap evidence but excluded from the fixed C paths.</summary>
+    [Fact]
+    public void ObservedNetFxLibraryIsExcludedFromCBuildIdentity()
+    {
+        using var tools = new WindowsToolset();
+        WindowsToolchainInfo before = tools.Measure().Value;
+        string netfx = Path.Combine(Path.GetDirectoryName(tools.Environment["WindowsSdkDir"])!, "NETFXSDK", "4.8", "lib", "um", "x64");
+        Directory.CreateDirectory(netfx);
+        tools.Environment["LIB"] += ";" + netfx;
+        Result<WindowsToolchainInfo> result = tools.Measure();
+        Assert.True(result.Succeeded, result.Succeeded ? "" : result.Failure.Message);
+        Assert.True(JsonFields.SameCanonical(before.Recipe, result.Value.Recipe));
+        Assert.Equal("libchdr-c-v1", result.Value.Recipe["windowsSearchPathPolicy"]!.GetValue<string>());
+        Assert.Equal("$VC/lib/x64;$SDK/Lib/10.0.26100.0/ucrt/x64;$SDK/Lib/10.0.26100.0/um/x64",
+            result.Value.Recipe["windowsLIB"]!.GetValue<string>());
+        Assert.Equal(tools.Environment["LIB"], result.Value.Locations["originalLIB"]!.GetValue<string>());
+        Assert.Equal(before.SelectedSearchPaths["LIB"], result.Value.SelectedSearchPaths["LIB"]);
+        Assert.DoesNotContain(netfx, result.Value.Locations["windowsLIB"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    /// <summary>No unobserved architecture/version/root, absent directory, link, or LIBPATH use gains an exclusion.</summary>
+    [Theory]
+    [InlineData("version")]
+    [InlineData("architecture")]
+    [InlineData("missing")]
+    [InlineData("ancestor-link")]
+    [InlineData("leaf-link")]
+    [InlineData("unknown-root")]
+    [InlineData("libpath")]
+    public void NetFxLibraryExclusionRemainsNarrow(string scenario)
+    {
+        using var tools = new WindowsToolset();
+        string parent = scenario == "unknown-root" ? Path.Combine(tools.Root, "other Windows Kits")
+            : Path.GetDirectoryName(tools.Environment["WindowsSdkDir"])!;
+        string version = Path.Combine(parent, "NETFXSDK", scenario == "version" ? "4.8.1" : "4.8");
+        string extra = Path.Combine(version, "lib", "um", scenario == "architecture" ? "x86" : "x64");
+        if (scenario != "missing") Directory.CreateDirectory(extra);
+        if (scenario is "ancestor-link" or "leaf-link")
+        {
+            string link = scenario == "ancestor-link" ? version : extra;
+            Directory.Move(link, link + "-actual");
+            Directory.CreateSymbolicLink(link, link + "-actual");
+        }
+        tools.Environment[scenario == "libpath" ? "LIBPATH" : "LIB"] += ";" + extra;
+        Assert.False(tools.Measure().Succeeded);
+    }
+
     /// <summary>Unobserved NETFX versions, library roots and linked ancestors remain rejected.</summary>
     [Theory]
     [InlineData("version")]
-    [InlineData("library")]
+    [InlineData("unobserved-library-layout")]
     [InlineData("ancestor-link")]
     public void NetFxExclusionIsExactAndDirectoryBound(string scenario)
     {
         using var tools = new WindowsToolset();
         string parent = Path.GetDirectoryName(tools.Environment["WindowsSdkDir"])!;
         string version = Path.Combine(parent, "NETFXSDK", scenario == "version" ? "4.8.1" : "4.8");
-        string extra = Path.Combine(version, scenario == "library" ? "lib" : "include", scenario == "library" ? "x64" : "um");
+        string extra = Path.Combine(version, scenario == "unobserved-library-layout" ? "lib" : "include", scenario == "unobserved-library-layout" ? "x64" : "um");
         Directory.CreateDirectory(extra);
         if (scenario == "ancestor-link")
         {
             Directory.Move(version, version + "-actual");
             Directory.CreateSymbolicLink(version, version + "-actual");
         }
-        tools.Environment[scenario == "library" ? "LIB" : "INCLUDE"] += ";" + extra;
+        tools.Environment[scenario == "unobserved-library-layout" ? "LIB" : "INCLUDE"] += ";" + extra;
         Assert.False(tools.Measure().Succeeded);
     }
 

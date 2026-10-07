@@ -122,15 +122,21 @@ internal static class WindowsToolchain
         ["LIBPATH"] = Path.Combine(vc, "lib", "x64"),
     };
 
-    // This single observed bootstrap include is irrelevant to the C build. No NETFX library path is accepted.
-    private static string? ExcludedNetFxInclude(string sdk)
+    // Only the observed NETFX include and x64 library bootstrap paths are excluded from the C build.
+    private static string? ExcludedNetFxPath(string sdk, string variable)
     {
         string selectedSdk = FullPath(sdk);
         string? kits = Path.GetDirectoryName(selectedSdk);
         if (kits is null || !Path.GetFileName(selectedSdk).Equals("10", StringComparison.OrdinalIgnoreCase)
             || !Path.GetFileName(kits).Equals("Windows Kits", StringComparison.OrdinalIgnoreCase)
             || !Directory.Exists(selectedSdk) || ArtifactsPath.IsLink(selectedSdk)) return null;
-        string excluded = Path.Combine(kits, "NETFXSDK", "4.8", "include", "um");
+        string? excluded = variable switch
+        {
+            "INCLUDE" => Path.Combine(kits, "NETFXSDK", "4.8", "include", "um"),
+            "LIB" => Path.Combine(kits, "NETFXSDK", "4.8", "lib", "um", "x64"),
+            _ => null,
+        };
+        if (excluded is null) return null;
         for (string? current = excluded; current is not null; current = Path.GetDirectoryName(current))
         {
             if (!Directory.Exists(current) || ArtifactsPath.IsLink(current)) return null;
@@ -155,7 +161,7 @@ internal static class WindowsToolchain
             _ => [Path.Combine(vc, "lib", "x64"), Path.Combine(vc, "atlmfc", "lib", "x64"), Path.Combine(vc, "lib", "x86", "store", "references"),
                 Path.Combine(sdk, "UnionMetadata", sdkVersion), Path.Combine(sdk, "References", sdkVersion), Path.Combine(systemRoot, "Microsoft.NET", "Framework64", "v4.0.30319")],
         };
-        string? excluded = variable == "INCLUDE" ? ExcludedNetFxInclude(sdk) : null;
+        string? excluded = ExcludedNetFxPath(sdk, variable);
         if (excluded is not null) allowed = [.. allowed, excluded];
         string[] paths = value.Split(';', StringSplitOptions.TrimEntries);
         if (paths.Length == 0 || paths.Any(path => !Path.IsPathFullyQualified(path) || !Directory.Exists(path) || ArtifactsPath.IsLink(path)

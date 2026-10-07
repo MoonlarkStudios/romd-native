@@ -35,8 +35,9 @@ CMake configuration, compilation and the layout probe use the same selected
 VC/UCRT/Windows SDK include and library paths; LIBPATH is the selected VC x64
 library directory. The original developer environment is validated first and
 retained separately from the selected paths. The observed Windows Kits
-`NETFXSDK/4.8/include/um` bootstrap path is recognized and excluded from this
-C-only environment; other unrecognized paths still fail. All three original
+`NETFXSDK/4.8/include/um` and `NETFXSDK/4.8/lib/um/x64` bootstrap paths are
+recognized and excluded from this C-only environment; other unrecognized
+paths still fail. All three original
 search-path values are logged before validation, including failed attempts.
 Absolute tool locations remain diagnostic manifest data. The C ABI probe
 measures layout and enum signedness under the actual compiler; managed tests

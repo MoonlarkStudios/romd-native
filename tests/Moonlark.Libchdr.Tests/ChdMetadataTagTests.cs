@@ -50,15 +50,21 @@ public sealed class ChdMetadataTagTests
             successful &= tag.TryFormat(text, out _);
             successful &= ChdMetadataTag.TryParse(text, out tag);
         }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 10_000; index++)
+        // A recurring allocation fails every window; one-time runtime transitions do not
+        // describe steady-state behavior. Use the same bounded windows as the other value types.
+        bool steady = false;
+        for (int window = 0; window < 5 && !steady; window++)
         {
-            successful &= tag.TryFormat(text, out _);
-            successful &= ChdMetadataTag.TryParse(text, out tag);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int index = 0; index < 10_000; index++)
+            {
+                successful &= tag.TryFormat(text, out _);
+                successful &= ChdMetadataTag.TryParse(text, out tag);
+            }
+            steady = GC.GetAllocatedBytesForCurrentThread() == before;
         }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(successful);
-        Assert.Equal(0, allocated);
+        Assert.True(steady, "Tag parsing or formatting allocated in every steady-state window.");
         Assert.Equal(ChdMetadataTag.CdTrackV2, tag);
     }
 }

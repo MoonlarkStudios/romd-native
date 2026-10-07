@@ -66,6 +66,12 @@ jobs:
             artifacts/qualification/linux-x64/checkout/artifacts/qualification/linux-x64
             artifacts/qualification/linux-x64/checkout/artifacts/native/libchdr
           retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-linux-x64-generation
+          path: artifacts/generation/libchdr
+          retention-days: 7
   linux-arm64:
     needs: fixtures
     runs-on: ubuntu-24.04-arm
@@ -96,4 +102,10 @@ jobs:
             artifacts/qualification/linux-arm64/builder.json
             artifacts/qualification/linux-arm64/checkout/artifacts/qualification/linux-arm64
             artifacts/qualification/linux-arm64/checkout/artifacts/native/libchdr
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-linux-arm64-generation
+          path: artifacts/generation/libchdr
           retention-days: 7

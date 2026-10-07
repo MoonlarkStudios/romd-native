@@ -22,6 +22,17 @@ public sealed class LinuxWorkflowTests
         Assert.Null(RepositoryCheck.Run(TestRepository.Root, null));
     }
 
+    /// <summary>Failed drift checks retain their actual output without changing the qualification artifact layout.</summary>
+    [Theory]
+    [InlineData("linux-x64")]
+    [InlineData("linux-arm64")]
+    public void LinuxGenerationEvidenceSurvivesFailure(string rid)
+    {
+        string text = File.ReadAllText(Path.Combine(TestRepository.Root, ".github", "workflows", "native-libchdr.yml"));
+        string job = text.Split("  " + rid + ":\n", StringSplitOptions.None)[1].Split("\n  linux-", StringSplitOptions.None)[0];
+        Assert.Contains("        if: always()\n        with:\n          name: libchdr-" + rid + "-generation\n          path: artifacts/generation/libchdr\n          retention-days: 7", job, StringComparison.Ordinal);
+    }
+
     /// <summary>Changing scheduling, identities, permissions, inputs or execution requires another reviewed contract.</summary>
     [Theory]
     [InlineData("contents: read", "contents: write")]

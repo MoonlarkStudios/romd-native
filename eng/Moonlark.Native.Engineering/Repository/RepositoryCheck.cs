@@ -160,7 +160,7 @@ internal static partial class RepositoryCheck
         // This pipeline's jobs, artifact transfer and runner/RID pairs are reviewed as one exact contract.
         // Keep the general source-workflow grammar closed; any Linux workflow edit requires updating this pin.
         if (name == "native-libchdr.yml")
-            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "f59f2e3c47a47e9a5f22e20953ef5db8ebc6bfe0c7402ab206b7c6e607a64c91",
+            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "c5ff8d1ab85aa252c16810eb458d9e12bec73ba6aab1776f40a09bed46ba493a",
                 "native-libchdr.yml differs from the reviewed read-only Linux workflow");
         string[] lines = text.Split('\n');
         (string Key, string Value, int Column)? previous = null;

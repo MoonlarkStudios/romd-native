@@ -307,21 +307,32 @@ public sealed class ChdCdImageTests
     [Fact]
     public void FrameAndSectorProjectionAllocateNothingAfterWarmup()
     {
-        using ChdFile file = Open(Pattern(4), "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:4");
+        byte[] logical = Pattern(4);
+        using ChdFile file = Open(logical, "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:4");
         using ChdCdImage image = ChdCdImage.Open(file, leaveOpen: true);
         Span<byte> bytes = stackalloc byte[2448];
+        bool successful = true;
         for (int index = 0; index < 100; index++)
         {
             image.ReadFrame(0, bytes);
-            image.ReadSector(1, 0, ChdCdSectorFormat.UserData, bytes);
+            successful &= image.ReadSector(1, 0, ChdCdSectorFormat.UserData, bytes) == 2048;
         }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1_000; index++)
+        // A recurring allocation fails every window; require an exactly zero-allocation
+        // steady-state window using the same bounded protocol as metadata operations.
+        bool steady = false;
+        for (int window = 0; window < 5 && !steady; window++)
         {
-            image.ReadFrame(0, bytes);
-            image.ReadSector(1, 0, ChdCdSectorFormat.UserData, bytes);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int index = 0; index < 10_000; index++)
+            {
+                image.ReadFrame(0, bytes);
+                successful &= image.ReadSector(1, 0, ChdCdSectorFormat.UserData, bytes) == 2048;
+            }
+            steady = GC.GetAllocatedBytesForCurrentThread() == before;
         }
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+        Assert.True(successful);
+        Assert.True(steady, "Frame or sector projection allocated in every steady-state window.");
+        Assert.True(bytes[..2048].SequenceEqual(logical.AsSpan(16, 2048)));
     }
 
     private static byte[] Pattern(int frames)

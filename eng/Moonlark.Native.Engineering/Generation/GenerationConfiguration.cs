@@ -41,9 +41,11 @@ internal sealed record GenerationConfiguration(
         AccessSpecifier: "*=Internal",
         CallingConvention: "*=Cdecl",
         // Fixed-width remaps keep host ABI spellings out (LP64 Linux emits nuint for uint64_t).
+        // Plain char occurs only behind pointers in the pinned API. Keep the existing sbyte* spelling
+        // on unsigned-char hosts such as Linux ARM64; pointer width and native bytes are unchanged.
         Remaps:
         [
-            "_chd_error=chd_error", "_chd_file=chd_file", "_chd_header=chd_header", "FILE=void",
+            "_chd_error=chd_error", "_chd_file=chd_file", "_chd_header=chd_header", "FILE=void", "char=sbyte",
             "int32_t=int", "uint32_t=uint", "int64_t=long", "uint64_t=ulong",
         ],
         TypeRemaps:

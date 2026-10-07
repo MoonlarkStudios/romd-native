@@ -29,6 +29,7 @@ public sealed class GenerationConfigurationTests
         "--remap", "_chd_file=chd_file",
         "--remap", "_chd_header=chd_header",
         "--remap", "FILE=void",
+        "--remap", "char=sbyte",
         "--remap", "int32_t=int",
         "--remap", "uint32_t=uint",
         "--remap", "int64_t=long",
@@ -59,6 +60,11 @@ public sealed class GenerationConfigurationTests
     [InlineData("uint64_t=ulong")]
     public void FixedWidthIntegerRemapsArePresent(string remap) =>
         Assert.Single(Pairs(Arguments), pair => pair == ("--remap", remap));
+
+    /// <summary>Plain C char is unsigned on Linux ARM64; its pointer representation must remain stable across hosts.</summary>
+    [Fact]
+    public void PlainCharPointerRemapIsHostIndependent() =>
+        Assert.Single(Pairs(Arguments), pair => pair == ("--remap", "char=sbyte"));
 
     /// <summary>Includes and inputs are exclusively the verified upstream tree, the entry header and the explicit shim.</summary>
     [Fact]

@@ -2,6 +2,9 @@
   <Folder Name="/eng/">
     <Project Path="eng/Moonlark.Native.Engineering/Moonlark.Native.Engineering.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Moonlark.Libchdr.QuickStart/Moonlark.Libchdr.QuickStart.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Moonlark.Libchdr/Moonlark.Libchdr.csproj" />
     <Project Path="src/Moonlark.Libchdr.Native/Moonlark.Libchdr.Native.csproj" />

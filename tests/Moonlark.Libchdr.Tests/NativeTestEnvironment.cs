@@ -6,7 +6,7 @@ namespace Moonlark.Libchdr.Tests;
 
 internal static class NativeTestEnvironment
 {
-    internal static readonly string Root = FindRoot();
+    internal static readonly string Root = TestRepository.Root;
 
     static NativeTestEnvironment()
     {
@@ -23,11 +23,4 @@ internal static class NativeTestEnvironment
 
     internal static string Fixture(string name) => Path.Combine(Root, "artifacts", "fixtures", "libchdr-final", name);
     internal static ChdFile OpenFixture(string name = "dvd-zstd.chd") => ChdFile.Open(Fixture(name));
-
-    private static string FindRoot()
-    {
-        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "eng", "pins", "libchdr.json"))) return directory.FullName;
-        throw new DirectoryNotFoundException("Native tests require the source checkout and verified synthetic fixtures; none are silently skipped.");
-    }
 }

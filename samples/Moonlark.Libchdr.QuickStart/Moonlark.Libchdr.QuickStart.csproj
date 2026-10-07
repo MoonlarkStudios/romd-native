@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- The publish checks add PublishAot or PublishTrimmed; these turn the analyzers on for an ordinary build too. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <!-- Its only namespace import is the README's, so building it proves the quick start compiles as pasted. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Moonlark.Libchdr/Moonlark.Libchdr.csproj" />
+    <!-- Keeps every public API through trimming, so the publish checks analyze the whole library, not only the sample's calls. -->
+    <TrimmerRootAssembly Include="Moonlark.Libchdr" />
+  </ItemGroup>
+</Project>

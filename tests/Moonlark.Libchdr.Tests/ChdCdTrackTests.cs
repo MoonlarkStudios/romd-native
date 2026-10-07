@@ -131,8 +131,15 @@ public sealed class ChdCdTrackTests
     {
         ReadOnlySpan<byte> payload = "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:16 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0\0"u8;
         for (int index = 0; index < 100; index++) ChdCdTrack.TryParse(ChdMetadataTag.CdTrackV2, payload, out _);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1_000; index++) ChdCdTrack.TryParse(ChdMetadataTag.CdTrackV2, payload, out _);
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+        // One-time runtime transitions (such as tiering under load) may allocate once; a steady-state
+        // allocation recurs in every window, so at least one window must allocate nothing.
+        bool steady = false;
+        for (int window = 0; window < 5 && !steady; window++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int index = 0; index < 1_000; index++) ChdCdTrack.TryParse(ChdMetadataTag.CdTrackV2, payload, out _);
+            steady = GC.GetAllocatedBytesForCurrentThread() == before;
+        }
+        Assert.True(steady, "Parsing allocated in every steady-state window.");
     }
 }

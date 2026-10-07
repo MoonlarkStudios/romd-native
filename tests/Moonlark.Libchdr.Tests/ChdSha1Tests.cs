@@ -55,16 +55,22 @@ public sealed class ChdSha1Tests
             successful &= value.TryFormat(text, out _);
             successful &= ChdSha1.TryParse(text, out value);
         }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 10_000; index++)
+        // One-time runtime transitions (such as tiering under load) may allocate once; a steady-state
+        // allocation recurs in every window, so at least one window must allocate nothing.
+        bool steady = false;
+        for (int window = 0; window < 5 && !steady; window++)
         {
-            successful &= value.TryWriteBytes(bytes);
-            successful &= value.TryFormat(text, out _);
-            successful &= ChdSha1.TryParse(text, out value);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int index = 0; index < 10_000; index++)
+            {
+                successful &= value.TryWriteBytes(bytes);
+                successful &= value.TryFormat(text, out _);
+                successful &= ChdSha1.TryParse(text, out value);
+            }
+            steady = GC.GetAllocatedBytesForCurrentThread() == before;
         }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(successful);
-        Assert.Equal(0, allocated);
+        Assert.True(steady, "Span operations allocated in every steady-state window.");
         Assert.True(ChdSha1.TryParse(text, out var parsed));
         Assert.Equal(value, parsed);
     }

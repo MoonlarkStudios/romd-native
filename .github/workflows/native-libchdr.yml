@@ -130,13 +130,16 @@ jobs:
       - name: Collect Windows evidence in the selected developer environment
         shell: cmd
         run: |
+          if not exist artifacts\qualification\win-x64 mkdir artifacts\qualification\win-x64
+          (echo ImageOS=%ImageOS%& echo ImageVersion=%ImageVersion%& echo RUNNER_ARCH=%RUNNER_ARCH%) > artifacts\qualification\win-x64\runner.txt
           if not exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" exit /b 1
-          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > artifacts\qualification\win-x64\vswhere-path.txt
+          if errorlevel 1 exit /b 1
+          set "VSROOT="
+          for /f "usebackq delims=" %%i in ("artifacts\qualification\win-x64\vswhere-path.txt") do set "VSROOT=%%i"
           if not defined VSROOT exit /b 1
           call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch=x64
           if errorlevel 1 exit /b 1
-          if not exist artifacts\qualification\win-x64 mkdir artifacts\qualification\win-x64
-          (echo ImageOS=%ImageOS%& echo ImageVersion=%ImageVersion%& echo RUNNER_ARCH=%RUNNER_ARCH%) > artifacts\qualification\win-x64\runner.txt
           dotnet restore Moonlark.Native.slnx --locked-mode
           if errorlevel 1 exit /b 1
           dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror

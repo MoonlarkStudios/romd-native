@@ -24,10 +24,13 @@ typedef int (*legacy_seek)(core_file *, int64_t, int);
     callback_close *: _Alignof(callback_close), callback_seek *: _Alignof(callback_seek), \
     legacy_size *: _Alignof(legacy_size), legacy_read *: _Alignof(legacy_read), \
     legacy_close *: _Alignof(legacy_close), legacy_seek *: _Alignof(legacy_seek))
-/* An enum is compatible with exactly one implementation-selected integer type. */
-#define ENUM_IS_SIGNED(value) _Generic((value), \
-    signed char: 1, unsigned char: 0, short: 1, unsigned short: 0, \
-    int: 1, unsigned int: 0, long: 1, unsigned long: 0, long long: 1, unsigned long long: 0)
+/* Conversion into the enum precedes integer promotions in the comparison. */
+static int chd_error_is_signed(void)
+{
+    volatile chd_error minus_one = (chd_error)-1;
+    volatile chd_error zero = (chd_error)0;
+    return minus_one < zero;
+}
 
 #define TYPE(name, type, suffix) \
     printf("\"" name "\":{\"size\":%zu,\"alignment\":%zu}" suffix, sizeof(type), _Alignof(type))
@@ -76,7 +79,7 @@ int main(void)
     TYPE("int", int, ",");
     TYPE("pointer", void *, ",");
     printf("\"chd_error\":{\"size\":%zu,\"alignment\":%zu,\"isSigned\":%s}},\"structures\":{",
-           sizeof(chd_error), _Alignof(chd_error), ENUM_IS_SIGNED((chd_error)0) ? "true" : "false");
+           sizeof(chd_error), _Alignof(chd_error), chd_error_is_signed() ? "true" : "false");
 
     BEGIN(chd_header);
     FIELD(chd_header, length, ",");

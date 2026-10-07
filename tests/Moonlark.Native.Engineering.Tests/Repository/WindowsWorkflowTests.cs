@@ -53,5 +53,16 @@ public sealed class WindowsWorkflowTests
         Assert.Contains("qualification windows accepts no arguments", error.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>Only checkout receives the Git conversion settings; pinned submodule bytes remain unchanged.</summary>
+    [Fact]
+    public void WindowsCheckoutPreservesPinnedBytes()
+    {
+        string job = Workflow().Split("  win-x64:\n", StringSplitOptions.None)[1].Split("\n  prepare-linux-subjects:", StringSplitOptions.None)[0];
+        Assert.Contains("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+            + "        env:\n          GIT_CONFIG_COUNT: 2\n          GIT_CONFIG_KEY_0: core.autocrlf\n"
+            + "          GIT_CONFIG_VALUE_0: 'false'\n          GIT_CONFIG_KEY_1: core.eol\n          GIT_CONFIG_VALUE_1: lf\n        with:\n", job, StringComparison.Ordinal);
+        Assert.Equal(1, job.Split("GIT_CONFIG_COUNT", StringSplitOptions.None).Length - 1);
+    }
+
     private static string Workflow() => File.ReadAllText(Path.Combine(TestRepository.Root, ".github", "workflows", "native-libchdr.yml"));
 }

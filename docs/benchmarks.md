@@ -43,7 +43,22 @@ manifest. Running this command is a timing experiment; ordinary build or
 focused gate tests do not establish benchmark acceptance. Linux x64 and ARM64
 are development/CI evidence targets; this Mac is the local development host and
 osx-arm64 qualification remains supported. Short reviewer smoke runs are diagnostic
-only. Windows qualification is manual or release-gated. No benchmark CI jobs are added here.
+only. Windows qualification is manual or release-gated.
+
+The native-evidence workflow exposes a manual `benchmarks` boolean, disabled by
+default. Selecting it runs this complete, unchanged policy after native qualification
+on each Linux runner and the manual Windows runner. Linux uses the clean nested
+qualification checkout and its container-built native assets; BenchmarkDotNet child
+builds and measurements run on the matching hosted runner. Windows uses its qualified
+checkout. These jobs have a 180-minute timeout. Hosted-runner noise can still make
+the timing gate inconclusive; dispatch alone does not establish acceptance.
+
+Each selected job retains the console log, all benchmark receipts and reports, and
+the parent and generated child build directories for seven days, including failed
+attempts. Download and audit them before expiry. Benchmark failure fails that job
+and can prevent Linux attestation; inspect native qualification and timing receipts
+separately. Ordinary pushes and dispatches with the option disabled do not run
+benchmarks. No package publication or additional signing permission is enabled.
 
 The matrix contains all six DVD codecs (`lzma`, `zlib`, `huff`, `flac`, `zstd`,
 `none`) and the v1 `cd-cdlz` fixture. Each fixture has four paired operations:

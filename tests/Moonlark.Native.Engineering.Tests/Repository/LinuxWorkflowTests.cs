@@ -32,7 +32,7 @@ public sealed class LinuxWorkflowTests
     [InlineData("    needs: fixtures\n", "")]
     [InlineData("qualification container --rid linux-arm64", "qualification container --rid linux-x64")]
     [InlineData("qualification fixtures", "repo check")]
-    [InlineData("generate --check", "repo check")]
+    [InlineData("dotnet tool restore", "dotnet --info")]
     [InlineData("          submodules: true\n", "")]
     [InlineData("          fetch-depth: 0\n", "          fetch-depth: 1\n")]
     [InlineData("persist-credentials: false", "persist-credentials: true")]

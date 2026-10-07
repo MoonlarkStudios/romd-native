@@ -21,7 +21,9 @@ agreement; it does not authenticate a manifest independently of its producing
 workflow or re-execute its recorded Mac tool.
 
 Each Linux job runs the pinned binding generator on Ubuntu, outside the
-baseline builder. ClangSharp's Linux executable requires glibc 2.34; the
+baseline builder. The container command exports the complete builtin header
+tree from the pinned Clang 21.1.8 image, records its hashes, and passes that
+resource directory explicitly to the generator before native qualification. ClangSharp's Linux executable requires glibc 2.34; the
 AlmaLinux 8.10 builder intentionally has glibc 2.28. Do not raise the native
 library's glibc ceiling to accommodate the generator.
 

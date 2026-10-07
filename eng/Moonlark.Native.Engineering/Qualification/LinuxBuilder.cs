@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using Moonlark.Native.Engineering.Core;
 using Moonlark.Native.Engineering.Fixtures;
+using Moonlark.Native.Engineering.Generation;
+using Moonlark.Native.Engineering.Native;
 
 namespace Moonlark.Native.Engineering.Qualification;
 
@@ -41,6 +43,12 @@ internal static class LinuxBuilder
         string fixtures = Path.Combine(root, "artifacts", "fixtures", "libchdr-final");
         Result<JsonObject> fixtureCheck = FixtureVerification.Verify(root, fixtures);
         if (!fixtureCheck.Succeeded) return fixtureCheck.Failure;
+        Result<string> uid = ProcessRunner.Run(["id", "-u"], environment, log);
+        Result<string> gid = ProcessRunner.Run(["id", "-g"], environment, log);
+        if (!uid.Succeeded) return uid.Failure;
+        if (!gid.Succeeded) return gid.Failure;
+        if (Check.That(uid.Value.Length > 0 && uid.Value.All(char.IsAsciiDigit)
+            && gid.Value.Length > 0 && gid.Value.All(char.IsAsciiDigit), "Cannot identify container file owner") is { } owner) return owner;
         string context = Path.Combine(directory, "context");
         if (Check.That(!Path.Exists(context) && !ArtifactsPath.IsLink(context), "Use a fresh builder context; preserve the earlier attempt explicitly") is { } contextLink) return contextLink;
         Directory.CreateDirectory(context);
@@ -60,6 +68,8 @@ internal static class LinuxBuilder
         if (Check.That(imageId.StartsWith("sha256:", StringComparison.Ordinal) && Authorities.Sha256().IsMatch(imageId[7..]), "Invalid builder image identity") is { } id) return id;
         Result<string> packages = RunContainer(["--platform", selected.Value.Platform, imageId, "cat", "/opt/installed-rpms.txt"], directory, environment, log, TimeSpan.FromMinutes(2));
         if (!packages.Succeeded) return packages.Failure;
+        Result<JsonObject> generator = Generate(root, rid, directory, imageId, selected.Value.Platform, uid.Value + ":" + gid.Value, environment, log);
+        if (!generator.Succeeded) return generator.Failure;
         string checkout = Path.Combine(directory, "checkout");
         if (Check.That(!Path.Exists(checkout), "Use a fresh qualification directory; preserve or remove the earlier owned checkout explicitly") is { } exists) return exists;
         Result<string> clone = ProcessRunner.Run(["git", "clone", "--no-hardlinks", root, checkout], environment, log, root);
@@ -79,12 +89,6 @@ internal static class LinuxBuilder
         }
         string cache = cachePath.Value;
         Directory.CreateDirectory(cache);
-        Result<string> uid = ProcessRunner.Run(["id", "-u"], environment, log);
-        Result<string> gid = ProcessRunner.Run(["id", "-g"], environment, log);
-        if (!uid.Succeeded) return uid.Failure;
-        if (!gid.Succeeded) return gid.Failure;
-        if (Check.That(uid.Value.Length > 0 && uid.Value.All(char.IsAsciiDigit)
-            && gid.Value.Length > 0 && gid.Value.All(char.IsAsciiDigit), "Cannot identify container file owner") is { } owner) return owner;
         string[] docker = ["--platform", selected.Value.Platform,
             "--user", uid.Value + ":" + gid.Value,
             "--env", "CI=true", "--env", "HOME=/tmp/moonlark-home", "--env", "DOTNET_CLI_HOME=/tmp/moonlark-home", "--env", "NUGET_PACKAGES=/nuget",
@@ -108,9 +112,45 @@ internal static class LinuxBuilder
             ["cmakeSha256"] = selected.Value.CMake.Digest, ["installedRpms"] = packages.Value,
             ["dockerfileSha256"] = Digest.Sha256File(Path.Combine(context, "Dockerfile")),
             ["rpmPinsSha256"] = Digest.Sha256File(Path.Combine(context, "packages.txt")),
+            ["generatorResources"] = generator.Value,
         };
         File.WriteAllText(receipt, result.ToJsonString(new() { WriteIndented = true }) + "\n");
         return null;
+    }
+
+    internal static Result<JsonObject> Generate(string root, string rid, string directory, string image, string platform, string owner,
+        IReadOnlyDictionary<string, string> environment, TextWriter log, Func<string[], Result<string>>? container = null, GeneratorTool? tool = null)
+    {
+        root = ArtifactsPath.Resolve(root);
+        container ??= arguments => RunContainer(arguments, directory, environment, log, TimeSpan.FromMinutes(2));
+        Result<string> compiler = container(["--platform", platform, image, "clang", "--version"]);
+        if (!compiler.Succeeded) return compiler.Failure;
+        if (Check.That(compiler.Value.Contains("clang version 21.1.8 ", StringComparison.Ordinal), "Expected the pinned Clang 21.1.8 resource headers") is { } version) return version;
+        Result<string> resource = container(["--platform", platform, image, "clang", "-print-resource-dir"]);
+        if (!resource.Succeeded) return resource.Failure;
+        if (Check.That(Path.IsPathFullyQualified(resource.Value) && !resource.Value.Contains('\n') && !resource.Value.Contains('\r'), "Compiler resource path must be absolute") is { } source) return source;
+        Result<string> output = ArtifactsPath.ValidateDirectory(Path.Combine(root, "artifacts", "qualification", rid, "clang-resource"), root);
+        if (!output.Succeeded) return output.Failure;
+        if (Check.That(!Path.Exists(output.Value), "Preserve the previous Clang resource export before retrying") is { } existing) return existing;
+        Directory.CreateDirectory(output.Value);
+        Result<string> copy = container(["--platform", platform, "--user", owner,
+            "--mount", "type=bind,source=" + output.Value + ",target=/resources", image,
+            "cp", "-R", "--", resource.Value + "/include", "/resources/include"]);
+        if (!copy.Succeeded) return copy.Failure;
+        Result<JsonObject> headers = ClangResources.Verify(root, output.Value);
+        if (!headers.Succeeded) return headers.Failure;
+        Result<GenerationResult> generated = BindingGenerator.Run(root, "dotnet", true, environment, tool ?? BindingGenerator.PinnedTool,
+            (_, _) => ClangResources.Arguments(output.Value));
+        if (!generated.Succeeded) return generated.Failure;
+        Result<JsonObject> after = ClangResources.Verify(root, output.Value);
+        if (!after.Succeeded) return after.Failure;
+        if (Check.That(JsonFields.SameCanonical(headers.Value, after.Value), "Clang resource headers changed during generation") is { } changed) return changed;
+        return new JsonObject
+        {
+            ["compiler"] = compiler.Value, ["sourceDirectory"] = resource.Value,
+            ["exportDirectory"] = Path.GetRelativePath(root, output.Value), ["headerSha256"] = headers.Value,
+            ["generatorCommand"] = JsonFields.Array(generated.Value.Command),
+        };
     }
 
     /// <summary>Removes only this invocation's uniquely named container, including when its attached client times out.</summary>

@@ -34,10 +34,11 @@ verifies this digest, the exact file inventory, paths and bytes, loaded assembly
 identities, and unchanged native/fixture inputs. Linked or escaping child files
 are rejected. Parent verification repeats after execution. Generated build files
 and outputs are retained, with unique job names preventing reuse across runs.
-`gate.json` binds the original input receipt, measurement JSON and completed child
-receipts by SHA-256, including failed runs; missing build evidence fails closed. Keep the
+`gate.json` binds the original input receipt, measurement JSON, per-launch allocation
+evidence and completed child receipts by SHA-256, including failed runs; missing build evidence fails closed. Keep the
 complete BenchmarkDotNet console
-log, full JSON report, generated build logs, `measurements.json` and `gate.json`
+log, full JSON report, generated build logs, `measurements.json`,
+`launch-allocations.json` and `gate.json`
 together with the source revision, native/managed binary hashes and fixture
 manifest. Running this command is a timing experiment; ordinary build or
 focused gate tests do not establish benchmark acceptance. Linux x64 and ARM64
@@ -86,9 +87,13 @@ exactly three measured process launches per row and zero managed allocation.
 For every paired case, the safe mean must be at most
 `1.25 * raw mean + 250 ns`. Each mean's 95% confidence-interval half-width must
 be at most 5% of that mean. Six warmup iterations precede 15–50 measurement
-iterations per launch; outliers are retained. The gate uses unrounded total
-allocated bytes divided by operations, so fractional amortized allocation does
-not disappear through the display column's rounding. Unknown or missing
+iterations per launch; outliers are retained. Each of the three successful launches
+must have exactly one raw GC counter window. The gate uses the largest unrounded
+allocated-bytes/operations ratio across those launches. A positive allocation in
+any launch fails; a final zero-allocation launch cannot hide an earlier failure.
+`launch-allocations.json` retains the launch indices, process success, raw GC
+lines and parsed counters. Rounded display and JSON summary metrics are not
+allocation evidence. Unknown or missing
 allocation metrics are persisted as explicit JSON null and fail closed, so a
 missing counter cannot prevent writing a failed gate receipt. Raw runtime allocation accounting may include
 allocation-quantum effects; these remain recorded and cannot be waived as a

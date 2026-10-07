@@ -7,6 +7,10 @@ This workflow produces evidence for review; it cannot accept a release gate.
 
 ## Inputs and execution
 
+`global.json` disables SDK roll-forward. The exact SDK also selects the
+ILLink tool package used by the lock files; selecting a newer patch implicitly
+breaks locked restore even when the target framework is unchanged.
+
 The macos-15 fixture job builds the pinned MAME chdman from its size/hash-checked
 source archive, generates synthetic data, verifies it, and transfers it through
 a SHA-pinned same-run artifact action. No game data or locally built native

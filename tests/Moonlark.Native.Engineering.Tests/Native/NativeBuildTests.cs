@@ -10,6 +10,68 @@ namespace Moonlark.Native.Engineering.Tests.Native;
 /// <summary>Build ordering, output hygiene, default-log guards and export derivation.</summary>
 public sealed class NativeBuildTests
 {
+    /// <summary>Only custom Windows CMake path values use forward slashes; verified inputs and other arguments retain their spelling.</summary>
+    [Fact]
+    public void WindowsConfigureArgumentsNormalizeOnlyCustomPathValues()
+    {
+        const string root = @"D:\a/romd native\checkout";
+        const string source = @"D:\a/romd native\checkout/native\libchdr\upstream";
+        const string output = @"D:\a/romd native\checkout/artifacts\selected output";
+        const string compiler = @"C:\Program Files\MSVC/bin\cl.exe";
+        var request = new NativeBuildRequest(root, "win-x64", source, output, compiler, TestRepository.CleanEnvironment);
+        var layout = new OutputLayout(output, "win-x64");
+        string[] originalLayout = [layout.Output, layout.Build, layout.Native, layout.BuildInfoHeader];
+
+        Assert.Equal(
+        [
+            "cmake", "-S", Path.Combine(root, "native", "libchdr"), "-B", layout.Build, "--preset", "win-x64",
+            "-DCMAKE_C_COMPILER=" + compiler,
+            "-DMOONLARK_UPSTREAM=D:/a/romd native/checkout/native/libchdr/upstream",
+            "-DMOONLARK_SOURCE_ROOT=D:/a/romd native/checkout",
+            "-DMOONLARK_NATIVE_OUTPUT=D:/a/romd native/checkout/artifacts/selected output/native",
+            "-DMOONLARK_PROBE_OUTPUT=D:/a/romd native/checkout/artifacts/selected output",
+            "-DMOONLARK_BUILD_INFO_HEADER=D:/a/romd native/checkout/artifacts/selected output/generated/moonlark_chdr_build_info_json.h",
+        ], NativeBuild.ConfigureArguments(request, layout));
+
+        Assert.Equal(root, request.Root);
+        Assert.Equal(source, request.Source);
+        Assert.Equal(output, request.Output);
+        Assert.Equal(compiler, request.Compiler);
+        Assert.Same(TestRepository.CleanEnvironment, request.Environment);
+        Assert.Equal(originalLayout, new[] { layout.Output, layout.Build, layout.Native, layout.BuildInfoHeader });
+    }
+
+    /// <summary>Unix CMake arguments preserve spaces and literal backslashes, including every custom path value.</summary>
+    [Theory]
+    [InlineData("linux-x64")]
+    [InlineData("linux-arm64")]
+    [InlineData("osx-x64")]
+    [InlineData("osx-arm64")]
+    public void UnixConfigureArgumentsPreserveLiteralBackslashes(string rid)
+    {
+        const string root = @"/tmp/romd root\literal";
+        const string source = @"/tmp/upstream source\literal";
+        const string output = @"/tmp/artifacts/output\literal";
+        const string compiler = @"/tmp/compiler tools/clang\literal";
+        var request = new NativeBuildRequest(root, rid, source, output, compiler, TestRepository.CleanEnvironment);
+        var layout = new OutputLayout(output, rid);
+
+        Assert.Equal(
+        [
+            "cmake", "-S", Path.Combine(root, "native", "libchdr"), "-B", layout.Build, "--preset", rid,
+            "-DCMAKE_C_COMPILER=" + compiler, "-DMOONLARK_UPSTREAM=" + source,
+            "-DMOONLARK_SOURCE_ROOT=" + root, "-DMOONLARK_NATIVE_OUTPUT=" + layout.Native,
+            "-DMOONLARK_PROBE_OUTPUT=" + output, "-DMOONLARK_BUILD_INFO_HEADER=" + layout.BuildInfoHeader,
+        ], NativeBuild.ConfigureArguments(request, layout));
+
+        Assert.Equal(root, request.Root);
+        Assert.Equal(source, request.Source);
+        Assert.Equal(output, request.Output);
+        Assert.Equal(compiler, request.Compiler);
+        Assert.Same(TestRepository.CleanEnvironment, request.Environment);
+        Assert.Equal(output, layout.Output);
+    }
+
     /// <summary>The shared native build boundary replaces only measured Windows search paths and preserves epoch and process inputs.</summary>
     [Fact]
     public void SelectedWindowsEnvironmentPreservesEpochAndOtherValues()

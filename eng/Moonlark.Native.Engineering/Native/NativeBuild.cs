@@ -77,13 +77,7 @@ internal static class NativeBuild
         if (NativeBuildInfo.WritePlaceholder(layout.BuildInfoHeader) is { } placeholder) return placeholder;
         CMakeFileApi.WriteQueries(layout.Build);
         // Static per-RID settings come from the preset; only verified paths and the compiler are passed here.
-        Result<string> configure = ProcessRunner.Run(
-        [
-            "cmake", "-S", Path.Combine(request.Root, "native", "libchdr"), "-B", layout.Build, "--preset", request.Rid,
-            "-DCMAKE_C_COMPILER=" + request.Compiler, "-DMOONLARK_UPSTREAM=" + request.Source,
-            "-DMOONLARK_SOURCE_ROOT=" + request.Root, "-DMOONLARK_NATIVE_OUTPUT=" + layout.Native,
-            "-DMOONLARK_PROBE_OUTPUT=" + layout.Output, "-DMOONLARK_BUILD_INFO_HEADER=" + layout.BuildInfoHeader,
-        ], selectedEnvironment.Value, log);
+        Result<string> configure = ProcessRunner.Run(ConfigureArguments(request, layout), selectedEnvironment.Value, log);
         if (!configure.Succeeded) return configure.Failure;
         Result<CMakeReply> reply = CMakeFileApi.Read(layout.Build);
         if (!reply.Succeeded) return reply.Failure;
@@ -93,6 +87,20 @@ internal static class NativeBuild
         if (windows is not null && BuildRecipe.RejectLocations(recipe.Value, windows.Locations.Where(pair => pair.Key is not ("windowsINCLUDE" or "windowsLIB" or "windowsLIBPATH"
                 or "originalINCLUDE" or "originalLIB" or "originalLIBPATH")).Select(pair => pair.Value!.GetValue<string>())) is { } leak) return leak;
         return new Configured(tools.Value, reply.Value, recipe.Value, windows, selectedEnvironment.Value);
+    }
+
+    /// <summary>Constructs CMake's arguments after the request's host, paths and compiler have been verified.</summary>
+    internal static string[] ConfigureArguments(NativeBuildRequest request, OutputLayout layout)
+    {
+        // CMake reinterprets backslashes in custom path values; retain native spelling everywhere else.
+        string CMakePath(string value) => request.Rid == "win-x64" ? value.Replace('\\', '/') : value;
+        return
+        [
+            "cmake", "-S", Path.Combine(request.Root, "native", "libchdr"), "-B", layout.Build, "--preset", request.Rid,
+            "-DCMAKE_C_COMPILER=" + request.Compiler, "-DMOONLARK_UPSTREAM=" + CMakePath(request.Source),
+            "-DMOONLARK_SOURCE_ROOT=" + CMakePath(request.Root), "-DMOONLARK_NATIVE_OUTPUT=" + CMakePath(layout.Native),
+            "-DMOONLARK_PROBE_OUTPUT=" + CMakePath(layout.Output), "-DMOONLARK_BUILD_INFO_HEADER=" + CMakePath(layout.BuildInfoHeader),
+        ];
     }
 
     /// <summary>Preserves verified process inputs while replacing only the three measured Windows C search paths.</summary>

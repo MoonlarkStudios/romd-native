@@ -10,6 +10,67 @@ namespace Moonlark.Native.Engineering.Tests.Native;
 /// <summary>Build ordering, output hygiene, default-log guards and export derivation.</summary>
 public sealed class NativeBuildTests
 {
+    /// <summary>The shared native build boundary replaces only measured Windows search paths and preserves epoch and process inputs.</summary>
+    [Fact]
+    public void SelectedWindowsEnvironmentPreservesEpochAndOtherValues()
+    {
+        using var tools = new WindowsToolset();
+        string extra = Path.Combine(tools.Environment["VCToolsInstallDir"], "atlmfc", "include");
+        Directory.CreateDirectory(extra);
+        tools.Environment["INCLUDE"] += ";" + extra;
+        WindowsToolchainInfo measured = tools.Measure().Value;
+        var original = new Dictionary<string, string>(tools.Environment, StringComparer.Ordinal)
+        {
+            ["SOURCE_DATE_EPOCH"] = "1790520871", ["PATH"] = "selected tools", ["TEMP"] = "scratch",
+        };
+        original.Remove("INCLUDE");
+        original["include"] = tools.Environment["INCLUDE"];
+        IReadOnlyDictionary<string, string> selected = NativeBuild.SelectBuildEnvironment(original, measured).Value;
+        Assert.Equal(original.Count, selected.Count);
+        foreach (string name in (string[])["INCLUDE", "LIB", "LIBPATH"])
+            Assert.Equal(measured.SelectedSearchPaths[name], selected[name]);
+        foreach (string name in (string[])["SOURCE_DATE_EPOCH", "PATH", "SystemRoot", "TEMP"])
+            Assert.Equal(original[name], selected[name]);
+        Assert.Equal(tools.Environment["INCLUDE"], original["include"]);
+    }
+
+    /// <summary>Selecting C paths cannot erase conflicting aliases or implicit compiler inputs before their rejection.</summary>
+    [Theory]
+    [InlineData("CL")]
+    [InlineData("CFLAGS")]
+    [InlineData("INCLUDE")]
+    public void SelectedWindowsEnvironmentCannotMaskUntrustedInputs(string name)
+    {
+        using var tools = new WindowsToolset();
+        var original = new Dictionary<string, string>(tools.Environment, StringComparer.Ordinal)
+        {
+            ["include"] = tools.Environment["INCLUDE"], [name] = "conflicting",
+        };
+        string expected = name == "INCLUDE" ? "Conflicting Windows environment aliases" : "Unrecorded build environment overrides";
+        Assert.Contains(expected, NativeBuild.SelectBuildEnvironment(original, tools.Measure().Value).Failure.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A different bootstrap dictionary cannot be silently overwritten with another measurement's selected paths.</summary>
+    [Theory]
+    [InlineData("INCLUDE")]
+    [InlineData("LIB")]
+    [InlineData("LIBPATH")]
+    public void SelectedWindowsEnvironmentRequiresTheMeasuredOriginal(string name)
+    {
+        using var tools = new WindowsToolset();
+        WindowsToolchainInfo measured = tools.Measure().Value;
+        var changed = new Dictionary<string, string>(tools.Environment, StringComparer.OrdinalIgnoreCase) { [name] = "unreviewed" };
+        Assert.Contains("differs from measured selection", NativeBuild.SelectBuildEnvironment(changed, measured).Failure.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Non-Windows builds retain the existing verified environment behavior.</summary>
+    [Fact]
+    public void NonWindowsBuildEnvironmentSelectionIsUnchanged()
+    {
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal) { ["PATH"] = "tools", ["SOURCE_DATE_EPOCH"] = "123" };
+        Assert.Equal(environment.OrderBy(pair => pair.Key), NativeBuild.SelectBuildEnvironment(environment, null).Value.OrderBy(pair => pair.Key));
+    }
+
     /// <summary>A rebuild that fails its source check removes the old manifest and probe receipt before touching caches.</summary>
     [Fact]
     public void EarlyFailedBuildInvalidatesOldManifest()

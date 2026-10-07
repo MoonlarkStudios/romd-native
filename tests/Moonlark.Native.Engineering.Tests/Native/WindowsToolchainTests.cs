@@ -25,6 +25,94 @@ public sealed class WindowsToolchainTests
         Assert.False(JsonFields.SameCanonical(measured.Recipe, first.Measure().Value.Recipe));
     }
 
+    /// <summary>The observed NETFX include path is audited but cannot affect the C search paths or recipe.</summary>
+    [Fact]
+    public void ObservedNetFxIncludeIsExcludedFromCBuildIdentity()
+    {
+        using var tools = new WindowsToolset();
+        WindowsToolchainInfo before = tools.Measure().Value;
+        string netfx = Path.Combine(Path.GetDirectoryName(tools.Environment["WindowsSdkDir"])!, "NETFXSDK", "4.8", "include", "um");
+        Directory.CreateDirectory(netfx);
+        tools.Environment["INCLUDE"] += ";" + netfx;
+        Result<WindowsToolchainInfo> result = tools.Measure();
+        Assert.True(result.Succeeded, result.Succeeded ? "" : result.Failure.Message);
+        Assert.Equal("libchdr-c-v1", result.Value.Recipe["windowsSearchPathPolicy"]?.GetValue<string>());
+        Assert.True(JsonFields.SameCanonical(before.Recipe, result.Value.Recipe));
+        Assert.Equal(tools.Environment["INCLUDE"], result.Value.Locations["originalINCLUDE"]?.GetValue<string>());
+        Assert.DoesNotContain(netfx, result.Value.Locations["windowsINCLUDE"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.DoesNotContain("NETFX", JsonFields.Compact(result.Value.Recipe), StringComparison.Ordinal);
+    }
+
+    /// <summary>Unobserved NETFX versions, library roots and linked ancestors remain rejected.</summary>
+    [Theory]
+    [InlineData("version")]
+    [InlineData("library")]
+    [InlineData("ancestor-link")]
+    public void NetFxExclusionIsExactAndDirectoryBound(string scenario)
+    {
+        using var tools = new WindowsToolset();
+        string parent = Path.GetDirectoryName(tools.Environment["WindowsSdkDir"])!;
+        string version = Path.Combine(parent, "NETFXSDK", scenario == "version" ? "4.8.1" : "4.8");
+        string extra = Path.Combine(version, scenario == "library" ? "lib" : "include", scenario == "library" ? "x64" : "um");
+        Directory.CreateDirectory(extra);
+        if (scenario == "ancestor-link")
+        {
+            Directory.Move(version, version + "-actual");
+            Directory.CreateSymbolicLink(version, version + "-actual");
+        }
+        tools.Environment[scenario == "library" ? "LIB" : "INCLUDE"] += ";" + extra;
+        Assert.False(tools.Measure().Succeeded);
+    }
+
+    /// <summary>Recipes must identify the closed C policy and cannot add or omit effective roots.</summary>
+    [Theory]
+    [InlineData("windowsSearchPathPolicy", null)]
+    [InlineData("windowsSearchPathPolicy", "other")]
+    [InlineData("windowsINCLUDE", "$VC/include")]
+    [InlineData("windowsLIB", "$VC/lib/x64")]
+    [InlineData("windowsLIBPATH", "$SYSTEMROOT/Microsoft.NET/Framework64/v4.0.30319")]
+    public void CSearchRecipeRejectsMissingOrChangedPolicy(string name, string? value)
+    {
+        using var tools = new WindowsToolset();
+        JsonObject recipe = tools.Measure().Value.Recipe;
+        if (value is null) recipe.Remove(name);
+        else recipe[name] = value;
+        Assert.NotNull(WindowsToolchain.ValidateRecipe(recipe));
+    }
+
+    /// <summary>All original search paths are captured even when the first validation fails.</summary>
+    [Fact]
+    public void AllBootstrapSearchPathsAreLoggedBeforeValidationFailure()
+    {
+        using var tools = new WindowsToolset();
+        tools.Environment["INCLUDE"] = "unapproved\ninclude";
+        tools.Environment["LIB"] = "unobserved lib";
+        tools.Environment["LIBPATH"] = "unobserved libpath";
+        using var log = new StringWriter();
+        Assert.False(WindowsToolchain.Measure(tools.Environment, tools.Instance, tools.Tools, log).Succeeded);
+        string line = Assert.Single(log.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+        const string prefix = "windowsBootstrapSearchPaths=";
+        Assert.StartsWith(prefix, line, StringComparison.Ordinal);
+        JsonObject paths = JsonNode.Parse(line[prefix.Length..])!.AsObject();
+        foreach (string name in (string[])["INCLUDE", "LIB", "LIBPATH"])
+            Assert.Equal(tools.Environment[name], paths[name]!.GetValue<string>());
+    }
+
+    /// <summary>Existing allowed bootstrap extras and order cannot alter the fixed C environment.</summary>
+    [Fact]
+    public void AllowedBootstrapExtrasDoNotChangeEffectiveCSearchPaths()
+    {
+        using var tools = new WindowsToolset();
+        WindowsToolchainInfo before = tools.Measure().Value;
+        string extra = Path.Combine(tools.Environment["VCToolsInstallDir"], "atlmfc", "include");
+        Directory.CreateDirectory(extra);
+        tools.Environment["INCLUDE"] = extra + ";" + string.Join(';', tools.Environment["INCLUDE"].Split(';').Reverse());
+        WindowsToolchainInfo after = tools.Measure().Value;
+        Assert.True(JsonFields.SameCanonical(before.Recipe, after.Recipe));
+        Assert.Equal(before.SelectedSearchPaths.OrderBy(pair => pair.Key), after.SelectedSearchPaths.OrderBy(pair => pair.Key));
+        Assert.NotEqual(before.Locations["originalINCLUDE"]!.GetValue<string>(), after.Locations["originalINCLUDE"]!.GetValue<string>());
+    }
+
     /// <summary>Wrong selectors, versions, installation or header/library roots are rejected.</summary>
     [Theory]
     [InlineData("VSCMD_ARG_HOST_ARCH", "x86")]
@@ -238,7 +326,7 @@ internal sealed class WindowsToolset : IDisposable
 
     internal WindowsToolset()
     {
-        string vs = Path.Combine(Root, "VS"), vc = Path.Combine(vs, "VC", "Tools", "MSVC", "14.44.35207"), sdk = Path.Combine(Root, "SDK");
+        string vs = Path.Combine(Root, "VS"), vc = Path.Combine(vs, "VC", "Tools", "MSVC", "14.44.35207"), sdk = Path.Combine(Root, "Windows Kits", "10");
         const string sdkVersion = "10.0.26100.0";
         Environment["VSINSTALLDIR"] = vs;
         Environment["VCToolsInstallDir"] = vc;

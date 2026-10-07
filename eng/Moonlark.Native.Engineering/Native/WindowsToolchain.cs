@@ -3,16 +3,19 @@ using Moonlark.Native.Engineering.Core;
 
 namespace Moonlark.Native.Engineering.Native;
 
-internal sealed record WindowsToolchainInfo(JsonObject Recipe, JsonObject Locations);
+internal sealed record WindowsToolchainInfo(JsonObject Recipe, JsonObject Locations, IReadOnlyDictionary<string, string> SelectedSearchPaths);
 
 /// <summary>Measures the selected x64 MSVC/Windows SDK tools, keeping host locations out of build identity.</summary>
 internal static class WindowsToolchain
 {
+    private const string SearchPathPolicy = "libchdr-c-v1";
+    private static readonly string[] SearchPathNames = ["INCLUDE", "LIB", "LIBPATH"];
     private static readonly string[] VersionNames = ["visualStudioVersion", "vcToolsVersion", "windowsSdkVersion", "ucrtVersion"];
     private static readonly string[] ToolNames = ["cl", "link", "dumpbin", "rc", "mt", "cmake", "ninja", "vswhere", "c1", "c2"];
 
     internal static Result<WindowsToolchainInfo> Collect(IReadOnlyDictionary<string, string> environment, string compiler, TextWriter? log)
     {
+        LogOriginalSearchPaths(environment, log);
         Result<IReadOnlyDictionary<string, string>> normalized = BuildEnvironment.WindowsNames(environment);
         if (!normalized.Succeeded) return normalized.Failure;
         IReadOnlyDictionary<string, string> env = normalized.Value;
@@ -43,8 +46,9 @@ internal static class WindowsToolchain
 
     /// <summary>All inputs are actual environment, vswhere and resolved-file observations; synthetic tests exercise rejection rules.</summary>
     internal static Result<WindowsToolchainInfo> Measure(IReadOnlyDictionary<string, string> environment, JsonObject instance,
-        IReadOnlyDictionary<string, string> tools)
+        IReadOnlyDictionary<string, string> tools, TextWriter? log = null)
     {
+        LogOriginalSearchPaths(environment, log);
         Result<IReadOnlyDictionary<string, string>> normalized = BuildEnvironment.WindowsNames(environment);
         if (!normalized.Succeeded) return normalized.Failure;
         IReadOnlyDictionary<string, string> env = normalized.Value;
@@ -69,6 +73,7 @@ internal static class WindowsToolchain
         {
             ["visualStudioVersion"] = vsVersion, ["vcToolsVersion"] = vcVersion, ["windowsSdkVersion"] = sdkVersion, ["ucrtVersion"] = ucrtVersion,
             ["windowsHostArchitecture"] = "x64", ["windowsTargetArchitecture"] = "x64",
+            ["windowsSearchPathPolicy"] = SearchPathPolicy,
         };
         var locations = new JsonObject { ["visualStudio"] = FullPath(vs), ["vcTools"] = FullPath(vc), ["windowsSdk"] = FullPath(sdk) };
         string vcBin = Path.Combine(vc, "bin", "Hostx64", "x64"), sdkBin = Path.Combine(sdk, "bin", sdkVersion, "x64");
@@ -87,17 +92,54 @@ internal static class WindowsToolchain
             recipe[name + "Sha256"] = Digest.Sha256File(path);
             locations[name] = FullPath(path);
         }
-        foreach (string variable in (string[])["INCLUDE", "LIB", "LIBPATH"])
+        Dictionary<string, string> selectedPaths = CSearchPaths(vc, sdk, sdkVersion);
+        foreach (string variable in SearchPathNames)
         {
-            Result<string> selected = SearchPath(variable, env[variable], vs, vc, sdk, sdkVersion, env["SystemRoot"]);
-            if (!selected.Succeeded) return selected.Failure;
-            recipe["windows" + variable] = selected.Value;
-            locations["windows" + variable] = env[variable];
+            Failure? original = ValidateBootstrapSearchPath(variable, env[variable], vs, vc, sdk, sdkVersion, env["SystemRoot"]);
+            if (original is not null) return original;
+            string selected = selectedPaths[variable];
+            recipe["windows" + variable] = string.Join(';', selected.Split(';').Select(path => Token(path, vc, "$VC", sdk, "$SDK")));
+            locations["original" + variable] = env[variable];
+            locations["windows" + variable] = selected;
         }
-        return new WindowsToolchainInfo(recipe, locations);
+        return new WindowsToolchainInfo(recipe, locations, selectedPaths);
     }
 
-    private static Result<string> SearchPath(string variable, string value, string vs, string vc, string sdk, string sdkVersion, string systemRoot)
+    private static void LogOriginalSearchPaths(IReadOnlyDictionary<string, string> environment, TextWriter? log)
+    {
+        if (log is null) return;
+        var original = new JsonObject(environment.Where(pair => SearchPathNames.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
+            .Select(pair => KeyValuePair.Create(pair.Key, (JsonNode?)pair.Value)));
+        log.WriteLine("windowsBootstrapSearchPaths=" + JsonFields.Compact(original));
+    }
+
+    private static Dictionary<string, string> CSearchPaths(string vc, string sdk, string sdkVersion) => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["INCLUDE"] = string.Join(';', Path.Combine(vc, "include"), Path.Combine(sdk, "Include", sdkVersion, "ucrt"),
+            Path.Combine(sdk, "Include", sdkVersion, "shared"), Path.Combine(sdk, "Include", sdkVersion, "um")),
+        ["LIB"] = string.Join(';', Path.Combine(vc, "lib", "x64"), Path.Combine(sdk, "Lib", sdkVersion, "ucrt", "x64"),
+            Path.Combine(sdk, "Lib", sdkVersion, "um", "x64")),
+        ["LIBPATH"] = Path.Combine(vc, "lib", "x64"),
+    };
+
+    // This single observed bootstrap include is irrelevant to the C build. No NETFX library path is accepted.
+    private static string? ExcludedNetFxInclude(string sdk)
+    {
+        string selectedSdk = FullPath(sdk);
+        string? kits = Path.GetDirectoryName(selectedSdk);
+        if (kits is null || !Path.GetFileName(selectedSdk).Equals("10", StringComparison.OrdinalIgnoreCase)
+            || !Path.GetFileName(kits).Equals("Windows Kits", StringComparison.OrdinalIgnoreCase)
+            || !Directory.Exists(selectedSdk) || ArtifactsPath.IsLink(selectedSdk)) return null;
+        string excluded = Path.Combine(kits, "NETFXSDK", "4.8", "include", "um");
+        for (string? current = excluded; current is not null; current = Path.GetDirectoryName(current))
+        {
+            if (!Directory.Exists(current) || ArtifactsPath.IsLink(current)) return null;
+            if (SamePath(current, kits)) return excluded;
+        }
+        return null;
+    }
+
+    private static Failure? ValidateBootstrapSearchPath(string variable, string value, string vs, string vc, string sdk, string sdkVersion, string systemRoot)
     {
         string include = Path.Combine(sdk, "Include", sdkVersion), lib = Path.Combine(sdk, "Lib", sdkVersion);
         string[] required = variable switch
@@ -113,12 +155,14 @@ internal static class WindowsToolchain
             _ => [Path.Combine(vc, "lib", "x64"), Path.Combine(vc, "atlmfc", "lib", "x64"), Path.Combine(vc, "lib", "x86", "store", "references"),
                 Path.Combine(sdk, "UnionMetadata", sdkVersion), Path.Combine(sdk, "References", sdkVersion), Path.Combine(systemRoot, "Microsoft.NET", "Framework64", "v4.0.30319")],
         };
+        string? excluded = variable == "INCLUDE" ? ExcludedNetFxInclude(sdk) : null;
+        if (excluded is not null) allowed = [.. allowed, excluded];
         string[] paths = value.Split(';', StringSplitOptions.TrimEntries);
         if (paths.Length == 0 || paths.Any(path => !Path.IsPathFullyQualified(path) || !Directory.Exists(path) || ArtifactsPath.IsLink(path)
             || !allowed.Any(candidate => SamePath(candidate, path))) || required.Any(path => !paths.Any(candidate => SamePath(candidate, path))))
             return new Failure("Windows " + variable + " differs from selected header/library roots; diagnostics="
                 + SearchPathDiagnostic(variable, value, paths, required, allowed));
-        return string.Join(';', paths.Select(path => Token(path, vc, "$VC", vs, "$VS", sdk, "$SDK", systemRoot, "$SYSTEMROOT")));
+        return null;
     }
 
     private static string SearchPathDiagnostic(string variable, string value, string[] paths, string[] required, string[] allowed)
@@ -173,19 +217,18 @@ internal static class WindowsToolchain
                 return new Failure("Windows toolchain provenance missing tool digest: " + name);
         if (tools["windowsSdkVersion"]!.GetValue<string>() != tools["ucrtVersion"]!.GetValue<string>())
             return new Failure("Windows toolchain provenance has inconsistent SDK versions");
-        foreach (string name in (string[])["windowsINCLUDE", "windowsLIB", "windowsLIBPATH"])
+        if (JsonFields.RequireString(tools, "windowsSearchPathPolicy") is not { Succeeded: true, Value: SearchPathPolicy })
+            return new Failure("Windows toolchain provenance missing or invalid C search policy");
+        foreach ((string name, string expected) in CSearchPaths("$VC", "$SDK", tools["windowsSdkVersion"]!.GetValue<string>()))
         {
-            if (JsonFields.RequireString(tools, name) is not { Succeeded: true } value || value.Value.Length == 0
-                || value.Value.Split(';').Any(path => !ValidToken(path)))
-                return new Failure("Windows toolchain provenance missing or invalid search path: " + name);
+            if (JsonFields.RequireString(tools, "windows" + name) is not { Succeeded: true } value
+                || value.Value != expected.Replace('\\', '/'))
+                return new Failure("Windows toolchain provenance differs from closed C search path: " + name);
         }
         return Check.That(JsonFields.RequireString(tools, "windowsHostArchitecture") is { Succeeded: true, Value: "x64" }
             && JsonFields.RequireString(tools, "windowsTargetArchitecture") is { Succeeded: true, Value: "x64" },
             "Windows toolchain provenance requires x64 host and target");
     }
-
-    private static bool ValidToken(string path) => path.Split('/') is ["$VC" or "$VS" or "$SDK" or "$SYSTEMROOT", .. { Length: > 0 } parts]
-        && parts.All(part => part.Length > 0 && part is not ("." or "..") && part.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-'));
 
     private static string VersionText(string value) => value.TrimEnd('\\', '/');
     private static bool ValidVersion(string value) => value.Length > 0 && value.All(character => char.IsAsciiDigit(character) || character == '.') && Version.TryParse(value, out _);

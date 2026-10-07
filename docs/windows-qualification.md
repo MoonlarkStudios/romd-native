@@ -30,7 +30,14 @@ after execution. Failed runs invalidate the current success receipt and
 retain their logs.
 
 The native recipe records selected Visual Studio, MSVC and Windows SDK
-versions, actual tool hashes and normalized header/library search paths.
+versions, actual tool hashes and the closed `libchdr-c-v1` search-path policy.
+CMake configuration, compilation and the layout probe use the same selected
+VC/UCRT/Windows SDK include and library paths; LIBPATH is the selected VC x64
+library directory. The original developer environment is validated first and
+retained separately from the selected paths. The observed Windows Kits
+`NETFXSDK/4.8/include/um` bootstrap path is recognized and excluded from this
+C-only environment; other unrecognized paths still fail. All three original
+search-path values are logged before validation, including failed attempts.
 Absolute tool locations remain diagnostic manifest data. The C ABI probe
 measures layout and enum signedness under the actual compiler; managed tests
 also exercise native enum arguments and returns. Generated bindings must

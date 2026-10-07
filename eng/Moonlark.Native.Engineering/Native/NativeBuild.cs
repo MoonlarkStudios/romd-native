@@ -20,7 +20,8 @@ internal static class NativeBuild
     private sealed record Verified(LibchdrAuthority Authority, long Epoch, ImmutableArray<string> Exports,
         IReadOnlyDictionary<string, string> Tools, IReadOnlyDictionary<string, string> Build);
 
-    private sealed record Configured(JsonObject Tools, CMakeReply Reply, JsonObject Recipe, WindowsToolchainInfo? Windows);
+    private sealed record Configured(JsonObject Tools, CMakeReply Reply, JsonObject Recipe, WindowsToolchainInfo? Windows,
+        IReadOnlyDictionary<string, string> BuildEnvironment);
 
     internal static Result<NativeBuildResult> Run(NativeBuildRequest request, TextWriter? log)
     {
@@ -37,7 +38,7 @@ internal static class NativeBuild
         if (!configured.Succeeded) return configured.Failure;
         string program = Path.Combine([resolved.Root, .. LayoutProbe.ProgramPath.Split('/')]);
         string programSha256 = Digest.Sha256File(program);
-        if (Compile(layout, verified.Value, configured.Value, log) is { } compile) return compile;
+        if (Compile(layout, verified.Value.Authority, configured.Value, log) is { } compile) return compile;
         return Finish(resolved, layout, verified.Value, configured.Value, programSha256, log);
     }
 
@@ -71,6 +72,8 @@ internal static class NativeBuild
             windows = measured.Value;
             foreach ((string name, JsonNode? value) in windows.Recipe) tools.Value[name] = value?.DeepClone();
         }
+        Result<IReadOnlyDictionary<string, string>> selectedEnvironment = SelectBuildEnvironment(verified.Build, windows);
+        if (!selectedEnvironment.Succeeded) return selectedEnvironment.Failure;
         if (NativeBuildInfo.WritePlaceholder(layout.BuildInfoHeader) is { } placeholder) return placeholder;
         CMakeFileApi.WriteQueries(layout.Build);
         // Static per-RID settings come from the preset; only verified paths and the compiler are passed here.
@@ -80,15 +83,34 @@ internal static class NativeBuild
             "-DCMAKE_C_COMPILER=" + request.Compiler, "-DMOONLARK_UPSTREAM=" + request.Source,
             "-DMOONLARK_SOURCE_ROOT=" + request.Root, "-DMOONLARK_NATIVE_OUTPUT=" + layout.Native,
             "-DMOONLARK_PROBE_OUTPUT=" + layout.Output, "-DMOONLARK_BUILD_INFO_HEADER=" + layout.BuildInfoHeader,
-        ], verified.Build, log);
+        ], selectedEnvironment.Value, log);
         if (!configure.Succeeded) return configure.Failure;
         Result<CMakeReply> reply = CMakeFileApi.Read(layout.Build);
         if (!reply.Succeeded) return reply.Failure;
         if (windows is not null && WindowsToolchain.ValidateCMake(reply.Value, windows) is { } selected) return selected;
         Result<JsonObject> recipe = Recipe(request, layout, verified.Authority, verified.Epoch, tools.Value, reply.Value);
         if (!recipe.Succeeded) return recipe.Failure;
-        if (windows is not null && BuildRecipe.RejectLocations(recipe.Value, windows.Locations.Where(pair => pair.Key is not ("windowsINCLUDE" or "windowsLIB" or "windowsLIBPATH")).Select(pair => pair.Value!.GetValue<string>())) is { } leak) return leak;
-        return new Configured(tools.Value, reply.Value, recipe.Value, windows);
+        if (windows is not null && BuildRecipe.RejectLocations(recipe.Value, windows.Locations.Where(pair => pair.Key is not ("windowsINCLUDE" or "windowsLIB" or "windowsLIBPATH"
+                or "originalINCLUDE" or "originalLIB" or "originalLIBPATH")).Select(pair => pair.Value!.GetValue<string>())) is { } leak) return leak;
+        return new Configured(tools.Value, reply.Value, recipe.Value, windows, selectedEnvironment.Value);
+    }
+
+    /// <summary>Preserves verified process inputs while replacing only the three measured Windows C search paths.</summary>
+    internal static Result<IReadOnlyDictionary<string, string>> SelectBuildEnvironment(IReadOnlyDictionary<string, string> environment,
+        WindowsToolchainInfo? windows)
+    {
+        Result<IReadOnlyDictionary<string, string>> normalized = windows is null
+            ? BuildEnvironment.Create(environment)
+            : BuildEnvironment.WindowsNames(environment).Then(value => BuildEnvironment.Create(value));
+        if (!normalized.Succeeded || windows is null) return normalized;
+        var selected = new Dictionary<string, string>(normalized.Value, StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, string value) in windows.SelectedSearchPaths)
+        {
+            if (!selected.TryGetValue(name, out string? original) || original != windows.Locations["original" + name]!.GetValue<string>())
+                return new Failure("Windows bootstrap search path differs from measured selection: " + name);
+            selected[name] = value;
+        }
+        return selected;
     }
 
     private static Result<JsonObject> Recipe(NativeBuildRequest request, OutputLayout layout, LibchdrAuthority authority, long epoch,
@@ -107,12 +129,12 @@ internal static class NativeBuild
         return BuildRecipe.RejectLocations(recipe, locations) is { } leak ? leak : recipe;
     }
 
-    private static Failure? Compile(OutputLayout layout, Verified verified, Configured configured, TextWriter? log)
+    private static Failure? Compile(OutputLayout layout, LibchdrAuthority authority, Configured configured, TextWriter? log)
     {
-        JsonObject info = BuildRecipe.BuildInfo(verified.Authority.Pin, verified.Authority.ManagedVersion, configured.Recipe);
+        JsonObject info = BuildRecipe.BuildInfo(authority.Pin, authority.ManagedVersion, configured.Recipe);
         if (NativeBuildInfo.Write(layout.BuildInfoHeader, info) is { } header) return header;
         if (!LayoutProbe.IsBuiltBy(configured.Reply.Compiler)) return new Failure("Compiler cannot build the required layout probe");
-        Result<string> build = ProcessRunner.Run(["cmake", "--build", layout.Build, "--target", "moonlark_chdr", LayoutProbe.Target], verified.Build, log);
+        Result<string> build = ProcessRunner.Run(["cmake", "--build", layout.Build, "--target", "moonlark_chdr", LayoutProbe.Target], configured.BuildEnvironment, log);
         return build.Succeeded ? null : build.Failure;
     }
 
@@ -124,7 +146,7 @@ internal static class NativeBuild
         Result<Inspection> inspection = BinaryInspection.Inspect(layout.Binary, request.Rid, verified.Exports, info, verified.Tools, log);
         if (!inspection.Succeeded) return inspection.Failure;
         Result<JsonObject> measured = LayoutProbe.Measure(new ProbeRun(request.Root, request.Rid, layout.Output, layout.Build,
-            authority.Pin, configured.Reply.Compiler, programSha256, verified.Build), log);
+            authority.Pin, configured.Reply.Compiler, programSha256, configured.BuildEnvironment), log);
         if (!measured.Succeeded) return measured.Failure;
         if (Unchanged(request, layout, verified, configured, log) is { } changed) return changed;
         File.WriteAllBytes(layout.ProbeReceipt, JsonFields.Serialize(measured.Value, sortKeys: false));
@@ -158,7 +180,11 @@ internal static class NativeBuild
             Result<WindowsToolchainInfo> current = WindowsToolchain.Collect(verified.Tools, request.Compiler, log);
             if (!current.Succeeded) return current.Failure;
             if (WindowsToolchain.ValidateCMake(reply.Value, current.Value) is { } selected) return selected;
-            if (!JsonFields.SameCanonical(previous.Recipe, current.Value.Recipe) || !JsonFields.SameCanonical(previous.Locations, current.Value.Locations))
+            Result<IReadOnlyDictionary<string, string>> selectedEnvironment = SelectBuildEnvironment(verified.Build, current.Value);
+            if (!selectedEnvironment.Succeeded) return selectedEnvironment.Failure;
+            if (!JsonFields.SameCanonical(previous.Recipe, current.Value.Recipe) || !JsonFields.SameCanonical(previous.Locations, current.Value.Locations)
+                || !configured.BuildEnvironment.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .SequenceEqual(selectedEnvironment.Value.OrderBy(pair => pair.Key, StringComparer.Ordinal)))
                 return new Failure("Windows toolchain changed during compilation");
         }
         Result<JsonObject> recipe = Recipe(request, layout, authority.Value, epoch.Value, configured.Tools, reply.Value);

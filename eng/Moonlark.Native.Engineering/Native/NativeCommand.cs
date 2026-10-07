@@ -32,7 +32,7 @@ internal static class NativeCommand
             $"local {rid} build and inspection; unqualified manifest: {(result.Succeeded ? result.Value.Manifest : "")}");
         TextWriter output = code == 0 ? context.Out : context.Error;
         if (result.Succeeded)
-            output.WriteLine("Layout probe: " + (result.Value.ProbeReceipt ?? "not built for an MSVC compiler"));
+            output.WriteLine("Layout probe: " + result.Value.ProbeReceipt);
         output.WriteLine("Log: " + log.Value);
         return code;
     }

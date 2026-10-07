@@ -34,6 +34,7 @@ internal static class NativeToolchain
     internal static Result<JsonObject> WithCompiler(JsonObject tools, CompilerIdentity compiler, string rid)
     {
         if (CheckCompiler(compiler.Id, rid) is { } unsupported) return unsupported;
+        if (rid == "win-x64" && WindowsToolchain.ValidateRecipe(tools) is { } windows) return windows;
         var toolchain = (JsonObject)tools.DeepClone();
         toolchain["compilerId"] = compiler.Id;
         toolchain["compilerVersion"] = compiler.Version;

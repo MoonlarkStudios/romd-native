@@ -89,6 +89,7 @@ internal static class NativeVerify
         if (Check.That(toolchain.Succeeded && toolchain.Value.Count > 0 && JsonFields.HasOnlyStrings(toolchain.Value)
             && Text(toolchain.Value, "compilerVersion") is { Length: > 0 }, "Toolchain mismatch") is { } tools) return tools;
         if (NativeToolchain.CheckCompiler(Text(toolchain.Value, "compilerId") ?? "", rid) is { } compiler) return compiler;
+        if (rid == "win-x64" && WindowsToolchain.ValidateRecipe(toolchain.Value) is { } windows) return windows;
         Result<JsonObject> inputs = BuildRecipe.InputDigests(root);
         if (!inputs.Succeeded) return inputs.Failure;
         if (Check.That(JsonFields.SameCanonical(value["inputSha256"], inputs.Value), "Input recipe digest mismatch") is { } digest) return digest;

@@ -7,7 +7,7 @@ namespace Moonlark.Native.Engineering.Native;
 internal sealed record NativeBuildRequest(string Root, string Rid, string Source, string Output, string Compiler,
     IReadOnlyDictionary<string, string> Environment);
 
-internal sealed record NativeBuildResult(string Manifest, string? ProbeReceipt);
+internal sealed record NativeBuildResult(string Manifest, string ProbeReceipt);
 
 /// <summary>
 /// Builds the pinned libchdr for this host. Order matters: old receipts are invalidated first; the recipe is computed
@@ -20,7 +20,7 @@ internal static class NativeBuild
     private sealed record Verified(LibchdrAuthority Authority, long Epoch, ImmutableArray<string> Exports,
         IReadOnlyDictionary<string, string> Tools, IReadOnlyDictionary<string, string> Build);
 
-    private sealed record Configured(JsonObject Tools, CMakeReply Reply, JsonObject Recipe);
+    private sealed record Configured(JsonObject Tools, CMakeReply Reply, JsonObject Recipe, WindowsToolchainInfo? Windows);
 
     internal static Result<NativeBuildResult> Run(NativeBuildRequest request, TextWriter? log)
     {
@@ -63,6 +63,14 @@ internal static class NativeBuild
     {
         Result<JsonObject> tools = NativeToolchain.CollectTools(request.Rid, verified.Tools, log);
         if (!tools.Succeeded) return tools.Failure;
+        WindowsToolchainInfo? windows = null;
+        if (request.Rid == "win-x64")
+        {
+            Result<WindowsToolchainInfo> measured = WindowsToolchain.Collect(verified.Tools, request.Compiler, log);
+            if (!measured.Succeeded) return measured.Failure;
+            windows = measured.Value;
+            foreach ((string name, JsonNode? value) in windows.Recipe) tools.Value[name] = value?.DeepClone();
+        }
         if (NativeBuildInfo.WritePlaceholder(layout.BuildInfoHeader) is { } placeholder) return placeholder;
         CMakeFileApi.WriteQueries(layout.Build);
         // Static per-RID settings come from the preset; only verified paths and the compiler are passed here.
@@ -76,8 +84,11 @@ internal static class NativeBuild
         if (!configure.Succeeded) return configure.Failure;
         Result<CMakeReply> reply = CMakeFileApi.Read(layout.Build);
         if (!reply.Succeeded) return reply.Failure;
+        if (windows is not null && WindowsToolchain.ValidateCMake(reply.Value, windows) is { } selected) return selected;
         Result<JsonObject> recipe = Recipe(request, layout, verified.Authority, verified.Epoch, tools.Value, reply.Value);
-        return recipe.Succeeded ? new Configured(tools.Value, reply.Value, recipe.Value) : recipe.Failure;
+        if (!recipe.Succeeded) return recipe.Failure;
+        if (windows is not null && BuildRecipe.RejectLocations(recipe.Value, windows.Locations.Where(pair => pair.Key is not ("windowsINCLUDE" or "windowsLIB" or "windowsLIBPATH")).Select(pair => pair.Value!.GetValue<string>())) is { } leak) return leak;
+        return new Configured(tools.Value, reply.Value, recipe.Value, windows);
     }
 
     private static Result<JsonObject> Recipe(NativeBuildRequest request, OutputLayout layout, LibchdrAuthority authority, long epoch,
@@ -100,8 +111,8 @@ internal static class NativeBuild
     {
         JsonObject info = BuildRecipe.BuildInfo(verified.Authority.Pin, verified.Authority.ManagedVersion, configured.Recipe);
         if (NativeBuildInfo.Write(layout.BuildInfoHeader, info) is { } header) return header;
-        string[] targets = LayoutProbe.IsBuiltBy(configured.Reply.Compiler) ? ["moonlark_chdr", LayoutProbe.Target] : ["moonlark_chdr"];
-        Result<string> build = ProcessRunner.Run(["cmake", "--build", layout.Build, "--target", .. targets], verified.Build, log);
+        if (!LayoutProbe.IsBuiltBy(configured.Reply.Compiler)) return new Failure("Compiler cannot build the required layout probe");
+        Result<string> build = ProcessRunner.Run(["cmake", "--build", layout.Build, "--target", "moonlark_chdr", LayoutProbe.Target], verified.Build, log);
         return build.Succeeded ? null : build.Failure;
     }
 
@@ -112,28 +123,25 @@ internal static class NativeBuild
         JsonObject info = BuildRecipe.BuildInfo(authority.Pin, authority.ManagedVersion, configured.Recipe);
         Result<Inspection> inspection = BinaryInspection.Inspect(layout.Binary, request.Rid, verified.Exports, info, verified.Tools, log);
         if (!inspection.Succeeded) return inspection.Failure;
-        JsonObject? receipt = null;
-        if (LayoutProbe.IsBuiltBy(configured.Reply.Compiler))
-        {
-            Result<JsonObject> measured = LayoutProbe.Measure(new ProbeRun(request.Root, request.Rid, layout.Output, layout.Build,
-                authority.Pin, configured.Reply.Compiler.Path, programSha256, verified.Build), log);
-            if (!measured.Succeeded) return measured.Failure;
-            receipt = measured.Value;
-        }
+        Result<JsonObject> measured = LayoutProbe.Measure(new ProbeRun(request.Root, request.Rid, layout.Output, layout.Build,
+            authority.Pin, configured.Reply.Compiler, programSha256, verified.Build), log);
+        if (!measured.Succeeded) return measured.Failure;
         if (Unchanged(request, layout, verified, configured, log) is { } changed) return changed;
-        if (receipt is not null) File.WriteAllBytes(layout.ProbeReceipt, JsonFields.Serialize(receipt, sortKeys: false));
+        File.WriteAllBytes(layout.ProbeReceipt, JsonFields.Serialize(measured.Value, sortKeys: false));
         var locations = new JsonObject
         {
             ["buildDirectory"] = layout.Build, ["buildInfoHeader"] = layout.BuildInfoHeader, ["compiler"] = configured.Reply.Compiler.Path,
             ["nativeOutput"] = layout.Native, ["sourceRoot"] = request.Root, ["upstream"] = request.Source,
         };
+        if (configured.Windows is { } windows)
+            foreach ((string name, JsonNode? value) in windows.Locations) locations["windows-" + name] = value?.DeepClone();
         byte[] manifest = JsonFields.Serialize(NativeManifest.Create(authority, request.Rid, layout.Binary, configured.Recipe, inspection.Value, locations), sortKeys: true);
         // Verify exactly the bytes that will be written.
         Result<JsonObject> written = JsonFields.ParseObject(manifest, "Manifest");
         if (!written.Succeeded) return written.Failure;
         if (NativeVerify.VerifyManifest(written.Value, layout.Binary, request.Root) is { } invalid) return invalid;
         File.WriteAllBytes(layout.Manifest, manifest);
-        return new NativeBuildResult(layout.Manifest, receipt is null ? null : layout.ProbeReceipt);
+        return new NativeBuildResult(layout.Manifest, layout.ProbeReceipt);
     }
 
     /// <summary>Re-verifies the source and recomputes the recipe from current authorities, inputs and the CMake reply.</summary>
@@ -145,6 +153,14 @@ internal static class NativeBuild
         if (!epoch.Succeeded) return epoch.Failure;
         Result<CMakeReply> reply = CMakeFileApi.Read(layout.Build);
         if (!reply.Succeeded) return reply.Failure;
+        if (configured.Windows is { } previous)
+        {
+            Result<WindowsToolchainInfo> current = WindowsToolchain.Collect(verified.Tools, request.Compiler, log);
+            if (!current.Succeeded) return current.Failure;
+            if (WindowsToolchain.ValidateCMake(reply.Value, current.Value) is { } selected) return selected;
+            if (!JsonFields.SameCanonical(previous.Recipe, current.Value.Recipe) || !JsonFields.SameCanonical(previous.Locations, current.Value.Locations))
+                return new Failure("Windows toolchain changed during compilation");
+        }
         Result<JsonObject> recipe = Recipe(request, layout, authority.Value, epoch.Value, configured.Tools, reply.Value);
         if (!recipe.Succeeded) return recipe.Failure;
         return Check.That(JsonFields.SameCanonical(recipe.Value, configured.Recipe) && epoch.Value == verified.Epoch,

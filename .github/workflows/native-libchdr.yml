@@ -1,4 +1,4 @@
-name: Libchdr Linux evidence
+name: Libchdr native evidence
 on:
   workflow_dispatch:
   pull_request:
@@ -107,6 +107,58 @@ jobs:
         if: always()
         with:
           name: libchdr-linux-arm64-generation
+          path: artifacts/generation/libchdr
+          retention-days: 7
+  win-x64:
+    if: github.event_name == 'workflow_dispatch'
+    needs: fixtures
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-synthetic-fixtures
+          path: artifacts/fixtures/libchdr-final
+      - name: Collect Windows evidence in the selected developer environment
+        shell: cmd
+        run: |
+          if not exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" exit /b 1
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT exit /b 1
+          call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          if not exist artifacts\qualification\win-x64 mkdir artifacts\qualification\win-x64
+          (echo ImageOS=%ImageOS%& echo ImageVersion=%ImageVersion%& echo RUNNER_ARCH=%RUNNER_ARCH%) > artifacts\qualification\win-x64\runner.txt
+          dotnet restore Moonlark.Native.slnx --locked-mode
+          if errorlevel 1 exit /b 1
+          dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
+          if errorlevel 1 exit /b 1
+          dotnet tool restore
+          if errorlevel 1 exit /b 1
+          dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build --no-restore -- generate --check
+          if errorlevel 1 exit /b 1
+          dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build --no-restore -- qualification windows
+          if errorlevel 1 exit /b 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-win-x64-evidence
+          path: |
+            artifacts/qualification/win-x64
+            artifacts/native/libchdr
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-win-x64-generation
           path: artifacts/generation/libchdr
           retention-days: 7
   prepare-linux-subjects:

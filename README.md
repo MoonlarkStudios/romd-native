@@ -23,6 +23,8 @@ dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- ge
 The full libchdr suite requires verified native outputs and generated synthetic
 fixtures. The [Linux qualification workflow](docs/linux-qualification.md) supplies
 both on fresh CI runners; a plain source checkout cannot pass that suite.
+The same workflow runs [Windows qualification](docs/windows-qualification.md)
+only when manually dispatched.
 
 All engineering tooling is C# in `eng/Moonlark.Native.Engineering`, tested by
 `tests/Moonlark.Native.Engineering.Tests`; there are no Python scripts.

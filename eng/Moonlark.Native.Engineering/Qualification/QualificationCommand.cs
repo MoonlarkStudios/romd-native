@@ -9,6 +9,13 @@ namespace Moonlark.Native.Engineering.Qualification;
 /// <summary>Read-only qualification jobs; no release, attestation or remote repository writes.</summary>
 internal static class QualificationCommand
 {
+    internal static int Windows(IReadOnlyList<string> arguments, CommandContext context)
+    {
+        if (arguments.Count != 0) return context.Report(new Failure("qualification windows accepts no arguments"), "");
+        Result<JsonObject> result = WindowsEvidence.Run(context.Root, context.Environment, context.Out);
+        return context.Report(result.Succeeded ? null : result.Failure, "local Windows evidence recorded; no release qualification");
+    }
+
     internal static int Linux(IReadOnlyList<string> arguments, CommandContext context)
     {
         Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--rid"], required: ["--rid"]);

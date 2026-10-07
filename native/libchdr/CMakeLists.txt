@@ -8,7 +8,7 @@ if(NOT MOONLARK_RID MATCHES "^(linux-x64|linux-arm64|osx-arm64|win-x64)$")
 endif()
 if(NOT IS_DIRECTORY "${MOONLARK_UPSTREAM}" OR NOT IS_DIRECTORY "${MOONLARK_SOURCE_ROOT}" OR
    NOT EXISTS "${MOONLARK_BUILD_INFO_HEADER}" OR NOT MOONLARK_NATIVE_OUTPUT OR
-   (NOT MSVC AND NOT MOONLARK_PROBE_OUTPUT))
+   NOT MOONLARK_PROBE_OUTPUT)
   message(FATAL_ERROR "Use the engineering 'native build' command with verified sources and build-info")
 endif()
 if(MOONLARK_RID STREQUAL "win-x64" AND NOT MSVC)
@@ -125,11 +125,13 @@ else()
 endif()
 
 # The ABI layout probe measures the pinned headers with the same compiler.
-if(NOT MSVC)
-  add_executable(moonlark_layout_probe "${MOONLARK_SOURCE_ROOT}/tests/native/libchdr_layout.c")
-  target_include_directories(moonlark_layout_probe PRIVATE "${MOONLARK_UPSTREAM}/include")
+add_executable(moonlark_layout_probe "${MOONLARK_SOURCE_ROOT}/tests/native/libchdr_layout.c")
+target_include_directories(moonlark_layout_probe PRIVATE "${MOONLARK_UPSTREAM}/include")
+if(MSVC)
+  target_compile_options(moonlark_layout_probe PRIVATE /W4 /WX)
+else()
   target_compile_options(moonlark_layout_probe PRIVATE -Wall -Wextra -Werror -pedantic)
-  set_target_properties(moonlark_layout_probe PROPERTIES OUTPUT_NAME layout-probe
-    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF EXPORT_COMPILE_COMMANDS ON
-    RUNTIME_OUTPUT_DIRECTORY "${MOONLARK_PROBE_OUTPUT}")
 endif()
+set_target_properties(moonlark_layout_probe PROPERTIES OUTPUT_NAME layout-probe
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF EXPORT_COMPILE_COMMANDS ON
+  RUNTIME_OUTPUT_DIRECTORY "${MOONLARK_PROBE_OUTPUT}")

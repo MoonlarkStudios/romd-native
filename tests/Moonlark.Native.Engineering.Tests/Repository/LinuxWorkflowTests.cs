@@ -15,7 +15,11 @@ public sealed class LinuxWorkflowTests
         Assert.Contains("    runs-on: macos-15\n", text, StringComparison.Ordinal);
         Assert.Contains("    runs-on: ubuntu-24.04\n", text, StringComparison.Ordinal);
         Assert.Contains("    runs-on: ubuntu-24.04-arm\n", text, StringComparison.Ordinal);
-        Assert.Equal(2, text.Split("    needs: fixtures\n", StringSplitOptions.None).Length - 1);
+        foreach (string rid in new[] { "linux-x64", "linux-arm64" })
+        {
+            string job = text.Split("  " + rid + ":\n", StringSplitOptions.None)[1];
+            Assert.StartsWith("    needs: fixtures\n", job, StringComparison.Ordinal);
+        }
         Assert.Contains("qualification container --rid linux-x64", text, StringComparison.Ordinal);
         Assert.Contains("qualification container --rid linux-arm64", text, StringComparison.Ordinal);
         Assert.Contains("qualification fixtures", text, StringComparison.Ordinal);

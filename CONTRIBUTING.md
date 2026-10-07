@@ -28,7 +28,8 @@ CI and release configuration are primary-owned. Foundation CI checks managed
 engineering tests and binding drift. The separate Linux workflow produces
 synthetic fixtures on macOS ARM64, then runs native builds and the complete
 libchdr/engineering suites on standard Linux x64 and ARM64 runners. Windows
-qualification remains manual or release-gated; it is not in per-change CI.
+qualification runs only on manual dispatch of that workflow; it is not in
+per-change CI. See [Windows qualification](docs/windows-qualification.md).
 See [Linux qualification](docs/linux-qualification.md) for commands, evidence
 boundaries and builder prerequisites.
 

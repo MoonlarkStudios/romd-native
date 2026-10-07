@@ -158,10 +158,10 @@ internal static partial class RepositoryCheck
             return new Failure($"{name}:{line}: only LF-terminated printable ASCII is supported (found U+{(int)text[unsupported]:X4})");
         }
         // This pipeline's jobs, artifact transfer and runner/RID pairs are reviewed as one exact contract.
-        // Keep the general source-workflow grammar closed; any Linux workflow edit requires updating this pin.
+        // Keep the general source-workflow grammar closed; any native workflow edit requires updating this pin.
         if (name == "native-libchdr.yml")
-            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "d7a2dc47c0555e64dfaf8a9d5ccd56d1946bff9ab172bdb4580c0eb829cdba3b",
-                "native-libchdr.yml differs from the reviewed Linux evidence and provenance workflow");
+            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "0f146efc2b95f5d56666096def18e546ea0644dc9dcc32e47fe4abbee9e4e082",
+                "native-libchdr.yml differs from the reviewed native evidence and Linux provenance workflow");
         string[] lines = text.Split('\n');
         (string Key, string Value, int Column)? previous = null;
         for (int index = 0; index < lines.Length; index++)

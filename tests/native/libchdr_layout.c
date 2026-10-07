@@ -4,13 +4,38 @@
 #include <stdio.h>
 #include <libchdr/chd.h>
 
+/* C11 generic selection retains the actual field type, including array extents.
+ * No default: a new or changed field type must be reviewed, never treated as a pointer. */
+typedef uint64_t (*callback_size)(void *);
+typedef size_t (*callback_read)(void *, size_t, size_t, void *);
+typedef int (*callback_close)(void *);
+typedef int (*callback_seek)(void *, int64_t, int);
+typedef uint64_t (*legacy_size)(core_file *);
+typedef size_t (*legacy_read)(void *, size_t, size_t, core_file *);
+typedef int (*legacy_close)(core_file *);
+typedef int (*legacy_seek)(core_file *, int64_t, int);
+#define FIELD_ALIGNMENT(type, field) _Generic(&((type *)0)->field, \
+    uint32_t *: _Alignof(uint32_t), uint64_t *: _Alignof(uint64_t), \
+    uint32_t (*)[4]: _Alignof(uint32_t[4]), \
+    uint8_t (*)[16]: _Alignof(uint8_t[16]), uint8_t (*)[20]: _Alignof(uint8_t[20]), \
+    uint8_t **: _Alignof(uint8_t *), void **: _Alignof(void *), \
+    const core_file_callbacks **: _Alignof(const core_file_callbacks *), \
+    callback_size *: _Alignof(callback_size), callback_read *: _Alignof(callback_read), \
+    callback_close *: _Alignof(callback_close), callback_seek *: _Alignof(callback_seek), \
+    legacy_size *: _Alignof(legacy_size), legacy_read *: _Alignof(legacy_read), \
+    legacy_close *: _Alignof(legacy_close), legacy_seek *: _Alignof(legacy_seek))
+/* An enum is compatible with exactly one implementation-selected integer type. */
+#define ENUM_IS_SIGNED(value) _Generic((value), \
+    signed char: 1, unsigned char: 0, short: 1, unsigned short: 0, \
+    int: 1, unsigned int: 0, long: 1, unsigned long: 0, long long: 1, unsigned long long: 0)
+
 #define TYPE(name, type, suffix) \
     printf("\"" name "\":{\"size\":%zu,\"alignment\":%zu}" suffix, sizeof(type), _Alignof(type))
 #define BEGIN(type) \
     printf("\"" #type "\":{\"size\":%zu,\"alignment\":%zu,\"fields\":{", sizeof(type), _Alignof(type))
 #define FIELD(type, field, suffix) \
     printf("\"" #field "\":{\"offset\":%zu,\"size\":%zu,\"alignment\":%zu}" suffix, \
-           offsetof(type, field), sizeof(((type *)0)->field), _Alignof(__typeof__(((type *)0)->field)))
+           offsetof(type, field), sizeof(((type *)0)->field), FIELD_ALIGNMENT(type, field))
 #define END(suffix) printf("}}" suffix)
 #define ERROR(name, suffix) printf("\"" #name "\":%u" suffix, (unsigned int)(name))
 
@@ -50,7 +75,8 @@ int main(void)
     TYPE("size_t", size_t, ",");
     TYPE("int", int, ",");
     TYPE("pointer", void *, ",");
-    TYPE("chd_error", chd_error, "},\"structures\":{");
+    printf("\"chd_error\":{\"size\":%zu,\"alignment\":%zu,\"isSigned\":%s}},\"structures\":{",
+           sizeof(chd_error), _Alignof(chd_error), ENUM_IS_SIGNED((chd_error)0) ? "true" : "false");
 
     BEGIN(chd_header);
     FIELD(chd_header, length, ",");

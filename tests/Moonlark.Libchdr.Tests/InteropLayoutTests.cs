@@ -6,11 +6,12 @@ using System.Text.Json;
 using Moonlark.Libchdr.Internal;
 using Moonlark.Libchdr.Interop;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Moonlark.Libchdr.Tests;
 
 /// <summary>Compares generated layouts with an executed probe of the authentic pinned C headers.</summary>
-public sealed unsafe class InteropLayoutTests
+public sealed unsafe class InteropLayoutTests(ITestOutputHelper output)
 {
     /// <summary>Every structure and field retains the C size, alignment and offset on this native platform.</summary>
     [Fact]
@@ -70,6 +71,47 @@ public sealed unsafe class InteropLayoutTests
         foreach (chd_error value in generated)
             Assert.Equal(errors.GetProperty(value.ToString()).GetUInt32(), (uint)value);
         Assert.Equal(generated.Select(value => (uint)value), safe.Select(value => checked((uint)value)));
+    }
+
+    /// <summary>Records signedness independently of the generated backing and exercises actual enum arguments and returns.</summary>
+    [Fact]
+    public void EnumArgumentsAndReturnValuesCrossTheNativeAbi()
+    {
+        using JsonDocument receipt = ReadReceipt();
+        bool signed = receipt.RootElement.GetProperty("measurements").GetProperty("primitives").GetProperty("chd_error").GetProperty("isSigned").GetBoolean();
+        output.WriteLine($"Native chd_error signed: {signed}; generated backing: {Enum.GetUnderlyingType(typeof(chd_error))}.");
+        string[] messages =
+        [
+            "no error", "no drive interface", "out of memory", "invalid file", "invalid parameter", "invalid data",
+            "file not found", "requires parent", "file not writeable", "read error", "write error", "codec error",
+            "invalid parent", "hunk out of range", "decompression error", "compression error", "can't create file",
+            "can't verify file", "operation not supported", "can't find metadata", "invalid metadata size",
+            "unsupported CHD version", "incomplete verify", "invalid metadata", "invalid state", "operation pending",
+            "no async operation in progress", "unsupported format",
+        ];
+        Assert.Equal(messages.Length, Enum.GetValues<chd_error>().Length);
+        for (int index = 0; index < messages.Length; index++)
+            Assert.Equal(messages[index], Marshal.PtrToStringUTF8((nint)NativeMethods.chd_error_string((chd_error)index)));
+        Assert.Equal(chd_error.CHDERR_INVALID_PARAMETER, NativeMethods.chd_read(null, 0, null));
+        byte[] filename = System.Text.Encoding.UTF8.GetBytes(NativeTestEnvironment.Fixture("dvd-zstd.chd") + "\0");
+        chd_file* file = null;
+        try
+        {
+            fixed (byte* path = filename)
+                Assert.Equal(chd_error.CHDERR_NONE, NativeMethods.chd_open((sbyte*)path, 1 /* CHD_OPEN_READ */, null, &file));
+            Assert.NotEqual(nint.Zero, (nint)file);
+            chd_header* header = NativeMethods.chd_get_header(file);
+            byte[] hunk = new byte[checked((int)header->hunkbytes)];
+            fixed (byte* buffer = hunk)
+            {
+                Assert.Equal(chd_error.CHDERR_NONE, NativeMethods.chd_read(file, 0, buffer));
+                Assert.Equal(chd_error.CHDERR_HUNK_OUT_OF_RANGE, NativeMethods.chd_read(file, header->totalhunks, buffer));
+            }
+        }
+        finally
+        {
+            if (file is not null) NativeMethods.chd_close(file);
+        }
     }
 
     /// <summary>Both callback tables use explicit Cdecl function pointers and exact native parameter types.</summary>

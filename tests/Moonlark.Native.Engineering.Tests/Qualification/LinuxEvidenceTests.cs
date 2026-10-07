@@ -16,7 +16,7 @@ public sealed class LinuxEvidenceTests
     public void DifferentActualBytesRejectMatchingClaims()
     {
         JsonObject first = Manifest("first"u8);
-        Assert.NotNull(LinuxEvidence.Compare("linux-x64", first, "first"u8, first.DeepClone().AsObject(), "other"u8));
+        Assert.NotNull(NativeEvidence.Compare("linux-x64", first, "first"u8, first.DeepClone().AsObject(), "other"u8));
     }
 
     /// <summary>Identical bytes still need matching valid digest claims.</summary>
@@ -25,7 +25,7 @@ public sealed class LinuxEvidenceTests
     {
         JsonObject first = Manifest("binary"u8);
         first["sha256"] = new string('0', 64);
-        Assert.NotNull(LinuxEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
+        Assert.NotNull(NativeEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
     }
 
     /// <summary>Reproducibility includes effective recipe and compiled build identity.</summary>
@@ -37,7 +37,7 @@ public sealed class LinuxEvidenceTests
         JsonObject first = Manifest("binary"u8);
         JsonObject second = first.DeepClone().AsObject();
         second[field]!["identity"] = "different";
-        Assert.NotNull(LinuxEvidence.Compare("linux-x64", first, "binary"u8, second, "binary"u8));
+        Assert.NotNull(NativeEvidence.Compare("linux-x64", first, "binary"u8, second, "binary"u8));
     }
 
     /// <summary>Missing build identities are not two equal valid identities.</summary>
@@ -48,7 +48,7 @@ public sealed class LinuxEvidenceTests
     {
         JsonObject first = Manifest("binary"u8);
         first.Remove(field);
-        Assert.NotNull(LinuxEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
+        Assert.NotNull(NativeEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
     }
 
     /// <summary>Both outputs must belong to the requested Linux RID.</summary>
@@ -61,7 +61,7 @@ public sealed class LinuxEvidenceTests
         JsonObject first = Manifest("binary"u8);
         JsonObject second = first.DeepClone().AsObject();
         second["rid"] = rid;
-        Assert.NotNull(LinuxEvidence.Compare("linux-x64", first, "binary"u8, second, "binary"u8));
+        Assert.NotNull(NativeEvidence.Compare("linux-x64", first, "binary"u8, second, "binary"u8));
     }
 
     /// <summary>A missing output fails before evidence can consume it.</summary>
@@ -69,7 +69,7 @@ public sealed class LinuxEvidenceTests
     public void MissingOutputIsFailure()
     {
         using var directory = new TemporaryDirectory();
-        Assert.False(LinuxEvidence.ReadBinary(Path.Combine(directory.Path, "missing.so")).Succeeded);
+        Assert.False(NativeEvidence.ReadBinary(Path.Combine(directory.Path, "missing.so")).Succeeded);
     }
 
     /// <summary>Host and process architecture must both match the requested RID.</summary>
@@ -79,7 +79,7 @@ public sealed class LinuxEvidenceTests
     [InlineData("linux-arm64", "Linux", Architecture.Arm64, Architecture.X64)]
     [InlineData("osx-arm64", "Darwin", Architecture.Arm64, Architecture.Arm64)]
     public void IncorrectHostIsRejected(string rid, string system, Architecture os, Architecture process) =>
-        Assert.NotNull(LinuxEvidence.ValidateHost(rid, system, os, process));
+        Assert.NotNull(NativeEvidence.ValidateHost(rid, system, os, process));
 
     /// <summary>A timeout is failure even if a process supplied zero as its exit code.</summary>
     [Theory]
@@ -87,16 +87,16 @@ public sealed class LinuxEvidenceTests
     [InlineData(-1, false)]
     [InlineData(0, true)]
     public void CommandFailuresCannotBecomeSuccess(int exitCode, bool timedOut) =>
-        Assert.NotNull(LinuxEvidence.CommandFailure("test", new ProcessOutput(exitCode, "", "failure detail", timedOut)));
+        Assert.NotNull(NativeEvidence.CommandFailure("test", new ProcessOutput(exitCode, "", "failure detail", timedOut)));
 
     /// <summary>The pure comparison accepts equal measurements without claiming they are a native build.</summary>
     [Fact]
     public void EqualMeasurementsPassOnlyTheComparisonRule()
     {
         JsonObject first = Manifest("binary"u8);
-        Assert.Null(LinuxEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
-        Assert.Null(LinuxEvidence.CommandFailure("test", new ProcessOutput(0, "", "", false)));
-        Assert.Null(LinuxEvidence.ValidateHost("linux-arm64", "Linux", Architecture.Arm64, Architecture.Arm64));
+        Assert.Null(NativeEvidence.Compare("linux-x64", first, "binary"u8, first.DeepClone().AsObject(), "binary"u8));
+        Assert.Null(NativeEvidence.CommandFailure("test", new ProcessOutput(0, "", "", false)));
+        Assert.Null(NativeEvidence.ValidateHost("linux-arm64", "Linux", Architecture.Arm64, Architecture.Arm64));
     }
 
     /// <summary>An early failure cannot leave evidence from a previous successful run.</summary>
@@ -122,7 +122,7 @@ public sealed class LinuxEvidenceTests
         File.WriteAllText(target, "synthetic");
         string link = Path.Combine(directory.Path, "link.so");
         File.CreateSymbolicLink(link, target);
-        Assert.False(LinuxEvidence.ReadBinary(link).Succeeded);
+        Assert.False(NativeEvidence.ReadBinary(link).Succeeded);
     }
 
     /// <summary>Successful process exit cannot hide empty, skipped, failed or unfinished runs.</summary>
@@ -134,17 +134,17 @@ public sealed class LinuxEvidenceTests
     [InlineData("Completed", 2, 2, 3, 0)]
     [InlineData("Aborted", 2, 2, 2, 0)]
     public void IncompleteTestResultsAreRejected(string outcome, int total, int executed, int passed, int failed) =>
-        Assert.False(LinuxEvidence.TestResults(Results(outcome, total, executed, passed, failed)).Succeeded);
+        Assert.False(NativeEvidence.TestResults(Results(outcome, total, executed, passed, failed)).Succeeded);
 
     /// <summary>Malformed results fail closed instead of treating absent counters as zero.</summary>
     [Fact]
-    public void MissingCountersAreRejected() => Assert.False(LinuxEvidence.TestResults(new XDocument(new XElement("TestRun"))).Succeeded);
+    public void MissingCountersAreRejected() => Assert.False(NativeEvidence.TestResults(new XDocument(new XElement("TestRun"))).Succeeded);
 
     /// <summary>Real result counters can be summarized without conferring qualification on synthetic test input.</summary>
     [Fact]
     public void CompletedResultCountersArePreserved()
     {
-        Result<JsonObject> result = LinuxEvidence.TestResults(Results("Completed", 3, 3, 3, 0));
+        Result<JsonObject> result = NativeEvidence.TestResults(Results("Completed", 3, 3, 3, 0));
         Assert.True(result.Succeeded);
         Assert.Equal(3, result.Value["passed"]!.GetValue<long>());
     }
@@ -210,7 +210,7 @@ public sealed class LinuxEvidenceTests
         {
             ["VSTestTestCaseFilter"] = "ambient-filter-sentinel", ["DirectoryBuildTargetsPath"] = "ambient-redirect-sentinel",
         };
-        var session = new LinuxEvidence.Session(directory.Path, directory.Path, environment, null);
+        var session = new NativeEvidence.Session(directory.Path, directory.Path, environment, null);
         string[] command = OperatingSystem.IsWindows() ? ["cmd.exe", "/d", "/c", "set"] : ["env"];
         Result<string> result = session.Command("environment-proof", command);
         Assert.True(result.Succeeded, result.Succeeded ? null : result.Failure.Message);
@@ -231,13 +231,13 @@ public sealed class LinuxEvidenceTests
     {
         using var directory = new TemporaryDirectory();
         WriteManagedAssemblies(directory.Path);
-        JsonObject captured = LinuxEvidence.ManagedAssemblies(directory.Path).Value;
+        JsonObject captured = NativeEvidence.ManagedAssemblies(directory.Path).Value;
         Assert.Equal(6, captured.Count);
         foreach (string relative in ManagedPaths)
             Assert.Equal(Digest.Sha256("synthetic assembly bytes"u8), captured[relative]!.GetValue<string>());
-        Assert.Null(LinuxEvidence.CheckManagedAssemblies(directory.Path, captured));
+        Assert.Null(NativeEvidence.CheckManagedAssemblies(directory.Path, captured));
         File.WriteAllText(Path.Combine(directory.Path, ManagedPaths[0]), "changed after tests");
-        Assert.NotNull(LinuxEvidence.CheckManagedAssemblies(directory.Path, captured));
+        Assert.NotNull(NativeEvidence.CheckManagedAssemblies(directory.Path, captured));
     }
 
     /// <summary>Missing tested DLLs cannot produce an incomplete success inventory.</summary>
@@ -247,7 +247,7 @@ public sealed class LinuxEvidenceTests
         using var directory = new TemporaryDirectory();
         WriteManagedAssemblies(directory.Path);
         File.Delete(Path.Combine(directory.Path, ManagedPaths[2]));
-        Assert.False(LinuxEvidence.ManagedAssemblies(directory.Path).Succeeded);
+        Assert.False(NativeEvidence.ManagedAssemblies(directory.Path).Succeeded);
     }
 
     private static readonly string[] ManagedPaths =

@@ -25,10 +25,25 @@ internal static class BuildEnvironment
     {
         string[] overrides = environment.Keys.Where(IsImplicitInput).Order(StringComparer.Ordinal).ToArray();
         if (overrides.Length > 0) return new Failure("Unrecorded build environment overrides: " + string.Join(", ", overrides));
+        Result<IReadOnlyDictionary<string, string>> names = OperatingSystem.IsWindows() ? WindowsNames(environment) : new Dictionary<string, string>(environment, StringComparer.Ordinal);
+        if (!names.Succeeded) return names.Failure;
         // Noninteractive commands never need the agent/terminal's display pager.
-        Dictionary<string, string> result = environment.Where(pair => pair.Key != "GIT_PAGER")
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        Dictionary<string, string> result = names.Value.Where(pair => !pair.Key.Equals("GIT_PAGER", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         if (sourceDateEpoch is { } epoch) result["SOURCE_DATE_EPOCH"] = epoch.ToString(CultureInfo.InvariantCulture);
+        return result;
+    }
+
+    /// <summary>Windows names are case-insensitive; conflicting aliases must not choose a value by enumeration order.</summary>
+    internal static Result<IReadOnlyDictionary<string, string>> WindowsNames(IReadOnlyDictionary<string, string> environment)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, string value) in environment)
+        {
+            if (result.TryGetValue(name, out string? previous) && previous != value)
+                return new Failure("Conflicting Windows environment aliases: " + name);
+            result[name] = value;
+        }
         return result;
     }
 

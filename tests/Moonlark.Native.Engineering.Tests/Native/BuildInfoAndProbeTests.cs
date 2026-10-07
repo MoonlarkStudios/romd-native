@@ -91,9 +91,35 @@ public sealed class BuildInfoAndProbeTests
         Assert.False(LayoutProbe.CompileCommand(directory.Path, program).Succeeded);
     }
 
+    /// <summary>Every supported compiler must build the probe, including MSVC.</summary>
+    [Theory]
+    [InlineData("AppleClang")]
+    [InlineData("Clang")]
+    [InlineData("GNU")]
+    [InlineData("MSVC")]
+    public void EverySupportedCompilerBuildsTheProbe(string id) =>
+        Assert.True(LayoutProbe.IsBuiltBy(new CompilerIdentity(id, "1.0", "compiler")));
+
+    /// <summary>Signedness must be measured as a boolean; neither signed nor unsigned implies an ABI failure.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    [InlineData("\"false\"")]
+    public void ProbeRequiresMeasuredEnumSignedness(string? invalid)
+    {
+        JsonObject measured = Measurements("win-x64");
+        measured["primitives"] = new JsonObject { ["chd_error"] = new JsonObject { ["isSigned"] = true } };
+        Assert.Null(LayoutProbe.ValidateMeasurements(measured, "win-x64"));
+        measured["primitives"]!["chd_error"]!["isSigned"] = false;
+        Assert.Null(LayoutProbe.ValidateMeasurements(measured, "win-x64"));
+        measured["primitives"]!["chd_error"]!["isSigned"] = invalid is null ? null : JsonNode.Parse(invalid);
+        Assert.Contains("signedness", LayoutProbe.ValidateMeasurements(measured, "win-x64")?.Message, StringComparison.Ordinal);
+    }
+
     private static JsonObject Measurements(string rid) => new()
     {
         ["schemaVersion"] = 1,
+        ["primitives"] = new JsonObject { ["chd_error"] = new JsonObject { ["isSigned"] = false } },
         ["platformMacros"] = new JsonObject { ["apple"] = rid == "osx-arm64", ["linux"] = rid.StartsWith("linux-", StringComparison.Ordinal), ["windows"] = rid == "win-x64" },
         ["architectureMacros"] = new JsonObject { ["arm64"] = rid.EndsWith("arm64", StringComparison.Ordinal), ["x64"] = rid.EndsWith("x64", StringComparison.Ordinal) },
     };

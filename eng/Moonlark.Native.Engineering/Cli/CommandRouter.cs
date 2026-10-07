@@ -24,6 +24,7 @@ internal static class CommandRouter
         ["fixtures generate"] = FixturesCommand.Generate,
         ["fixtures verify"] = FixturesCommand.Verify,
         ["qualification linux"] = QualificationCommand.Linux,
+        ["qualification windows"] = QualificationCommand.Windows,
         ["qualification subjects"] = QualificationCommand.Subjects,
         ["qualification container"] = QualificationCommand.Container,
         ["qualification fixtures"] = QualificationCommand.Fixtures,

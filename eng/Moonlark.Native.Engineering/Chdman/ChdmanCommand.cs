@@ -10,10 +10,10 @@ internal static class ChdmanCommand
     internal const string DefaultOutput = "artifacts/tools/chdman/osx-arm64";
     internal const int DefaultJobs = 4;
 
-    /// <summary><c>chdman build --archive PATH --log PATH [--output PATH] [--jobs N]</c>: builds only the pinned chdman and prints its receipt.</summary>
+    /// <summary><c>chdman build --archive PATH --log PATH [--output PATH] [--jobs N] [--sdl-include PATH]</c>: builds only the pinned chdman and prints its receipt.</summary>
     internal static int Build(IReadOnlyList<string> arguments, CommandContext context)
     {
-        Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--archive", "--log", "--output", "--jobs"], required: ["--archive", "--log"]);
+        Result<ParsedArguments> parsed = Arguments.Parse(arguments, ["--archive", "--log", "--output", "--jobs", "--sdl-include"], required: ["--archive", "--log"]);
         if (!parsed.Succeeded) return context.Report(parsed.Failure, "");
         string? jobsText = parsed.Value.Option("--jobs");
         int jobs = DefaultJobs;
@@ -21,7 +21,7 @@ internal static class ChdmanCommand
             return context.Report(new Failure("Jobs must be an integer: " + jobsText), "");
         var request = new ChdmanBuildRequest(Path.GetFullPath(parsed.Value.Option("--archive")!),
             Path.GetFullPath(parsed.Value.Option("--output") ?? Path.Combine(context.Root, DefaultOutput)),
-            jobs, Path.GetFullPath(parsed.Value.Option("--log")!));
+            jobs, Path.GetFullPath(parsed.Value.Option("--log")!), SdlIncludeRoot: parsed.Value.Option("--sdl-include"));
         Result<JsonObject> receipt = ChdmanBuild.Run(context.Root, context.Environment, request);
         if (!receipt.Succeeded) return context.Report(receipt.Failure, "");
         context.Out.Write(ReceiptJson.Serialize(receipt.Value));

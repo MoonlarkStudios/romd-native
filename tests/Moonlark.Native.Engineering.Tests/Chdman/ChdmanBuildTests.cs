@@ -190,7 +190,7 @@ public sealed class ChdmanBuildTests
     [Fact]
     public void RepositoryRecipeCoversTheChdmanSources() =>
         Assert.Equal(
-            ["ChdmanBuild.cs", "ChdmanCommand.cs", "MamePin.cs", "ReceiptJson.cs", "SourceArchive.cs"],
+            ["ChdmanBuild.cs", "ChdmanCommand.cs", "ChdmanSdlHeaders.cs", "MamePin.cs", "ReceiptJson.cs", "SourceArchive.cs"],
             ChdmanBuild.RecipeSources(TestRepository.Root).Select(path => path[(ChdmanBuild.RecipeDirectory.Length + 1)..]));
 
     /// <summary>Receipts use Python's <c>json.dumps(indent=2)</c> layout.</summary>

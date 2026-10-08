@@ -182,7 +182,7 @@ public sealed class NativeBuildTests
             if (Directory.Exists(path)) Directory.Delete(path);
             Directory.CreateSymbolicLink(path, directory.Path);
             Assert.Contains("symlink", NativeOutput.Prepare(output)?.Message, StringComparison.Ordinal);
-            File.Delete(path);
+            Directory.Delete(path);
         }
     }
 

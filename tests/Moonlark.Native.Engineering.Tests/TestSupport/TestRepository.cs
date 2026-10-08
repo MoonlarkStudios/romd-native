@@ -9,7 +9,24 @@ internal sealed class TemporaryDirectory : IDisposable
 
     internal string Path { get; }
 
-    public void Dispose() => Directory.Delete(Path, recursive: true);
+    public void Dispose()
+    {
+        ClearReadOnlyFiles(Path);
+        Directory.Delete(Path, recursive: true);
+    }
+
+    private static void ClearReadOnlyFiles(string directory)
+    {
+        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) return;
+        foreach (string path in Directory.EnumerateFileSystemEntries(directory))
+        {
+            FileAttributes attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
+            if ((attributes & FileAttributes.Directory) != 0) ClearReadOnlyFiles(path);
+            else if ((attributes & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+        }
+    }
 }
 
 internal static class TestRepository
@@ -44,8 +61,13 @@ internal static class TestRepository
         }
     }
 
-    internal static string Git(string source, params string[] arguments) =>
-        ProcessRunner.Run(["git", "-C", source, .. arguments], CleanEnvironment).Value;
+    /// <summary>Fixture-local LF settings also apply when production checks invoke Git directly.</summary>
+    internal static string Git(string source, params string[] arguments)
+    {
+        _ = ProcessRunner.Run(["git", "-C", source, "config", "--local", "core.autocrlf", "false"], CleanEnvironment).Value;
+        _ = ProcessRunner.Run(["git", "-C", source, "config", "--local", "core.eol", "lf"], CleanEnvironment).Value;
+        return ProcessRunner.Run(["git", "-C", source, .. arguments], CleanEnvironment).Value;
+    }
 }
 
 /// <summary>A committed synthetic upstream checkout with a pin that matches it exactly.</summary>

@@ -142,7 +142,7 @@ public sealed class ChdmanBuildTests
         Assert.Contains("--STRIP_SYMBOLS=1", arguments);
         Assert.Contains("--osd=mac", arguments);
         Assert.Contains("--gcc_version=21.0.0", arguments);
-        Assert.Equal("/source/3rdparty/genie/bin/darwin/genie", arguments[0]);
+        Assert.Equal(Path.GetFullPath("/source/3rdparty/genie/bin/darwin/genie"), Path.GetFullPath(arguments[0]));
         Assert.Contains("--ARCHOPTS=-ffile-prefix-map=/source=/_/mame -mmacosx-version-min=14.0", arguments);
         Assert.Contains(ChdmanBuild.LinkArguments(8), value => value.Contains("-fatal_warnings,-reproducible", StringComparison.Ordinal));
         Assert.Contains("-j8", ChdmanBuild.LinkArguments(8));

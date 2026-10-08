@@ -127,6 +127,39 @@ public sealed class ClangResourcesTests
         Assert.Equal(GenerationFixture.CommittedBindings, File.ReadAllText(fixture.Bindings));
     }
 
+    /// <summary>Only a single-line, NUL-free Linux absolute resource path can reach export or generation.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("relative")]
+    [InlineData("C:/pinned/clang/21")]
+    [InlineData("C:\\pinned\\clang\\21")]
+    [InlineData("\\\\server\\share\\clang")]
+    [InlineData("/pinned/clang/21\0")]
+    [InlineData("/pinned/clang/21\n/other")]
+    [InlineData("/pinned/clang/21\r/other")]
+    [InlineData("/pinned/clang/21\r\n/other")]
+    public void InvalidLinuxResourcePathsAreRejectedBeforeExport(string resource)
+    {
+        using var fixture = new GenerationFixture();
+        string directory = Path.Combine(fixture.Root, "artifacts", "qualification", "linux-arm64");
+        Directory.CreateDirectory(directory);
+        int exports = 0;
+        Result<string> Container(string[] arguments)
+        {
+            if (arguments.Contains("--version")) return "clang version 21.1.8 (pinned)";
+            if (arguments.Contains("-print-resource-dir")) return resource;
+            exports++;
+            return new Failure("Unexpected resource export");
+        }
+        var result = LinuxBuilder.Generate(fixture.Root, "linux-arm64", directory, "sha256:pinned", "linux/arm64", "1000:1000",
+            TestRepository.CleanEnvironment, TextWriter.Null, Container, fixture.Tool(_ => new Failure("Unexpected generation")));
+        Assert.False(result.Succeeded);
+        Assert.Equal(0, exports);
+        Assert.Contains("Compiler resource path must be absolute", result.Failure.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.Invocations);
+        Assert.False(Directory.Exists(Path.Combine(directory, "clang-resource")));
+    }
+
     private static string Create(string root)
     {
         string directory = Path.Combine(root, "artifacts", "clang resource");

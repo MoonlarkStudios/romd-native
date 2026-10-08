@@ -128,7 +128,7 @@ internal static class LinuxBuilder
         if (Check.That(compiler.Value.Contains("clang version 21.1.8 ", StringComparison.Ordinal), "Expected the pinned Clang 21.1.8 resource headers") is { } version) return version;
         Result<string> resource = container(["--platform", platform, image, "clang", "-print-resource-dir"]);
         if (!resource.Succeeded) return resource.Failure;
-        if (Check.That(Path.IsPathFullyQualified(resource.Value) && !resource.Value.Contains('\n') && !resource.Value.Contains('\r'), "Compiler resource path must be absolute") is { } source) return source;
+        if (Check.That(resource.Value.StartsWith('/') && !resource.Value.Contains('\0') && !resource.Value.Contains('\n') && !resource.Value.Contains('\r'), "Compiler resource path must be absolute") is { } source) return source;
         Result<string> output = ArtifactsPath.ValidateDirectory(Path.Combine(root, "artifacts", "qualification", rid, "clang-resource"), root);
         if (!output.Succeeded) return output.Failure;
         if (Check.That(!Path.Exists(output.Value), "Preserve the previous Clang resource export before retrying") is { } existing) return existing;

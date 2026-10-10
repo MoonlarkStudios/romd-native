@@ -1,9 +1,13 @@
 # Third-party inventory
 
 Repository wrapper code, build scripts and generator configuration use MIT.
-Native artifacts retain their actual upstream component licenses. No native
-binary is currently included. This inventory does not replace the full license
-texts required in each qualified package/archive.
+Native artifacts retain their actual upstream component licenses. Native
+binaries are staged under the checkout's ignored `artifacts/`; internal
+`local-unqualified` native package candidates include their declared RID
+binaries. These candidates remain unqualified for release. This inventory does
+not establish a complete component/license or corresponding-source inventory
+and does not replace the exact license texts and required corresponding source
+for each qualified package/archive.
 
 At libchdr commit `607694ca0812edfc9cc2030c64634fc2393668de`:
 

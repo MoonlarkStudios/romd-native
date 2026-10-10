@@ -162,6 +162,9 @@ internal static partial class RepositoryCheck
         if (name == "native-libchdr.yml")
             return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "7b435b20f275c0654cc7fd018b4e142c572ce5a2af6ca231df73c08791209af8",
                 "native-libchdr.yml differs from the reviewed native evidence and Linux provenance workflow");
+        if (name == "native-chdman.yml")
+            return Check.That(Digest.Sha256(Encoding.UTF8.GetBytes(text)) == "570a4a1b42df1a0bbf0628a95b6b2d8cfd9d22ccef9885dea41024cd536cb91e",
+                "native-chdman.yml differs from the reviewed manual candidate workflow");
         string[] lines = text.Split('\n');
         (string Key, string Value, int Column)? previous = null;
         for (int index = 0; index < lines.Length; index++)

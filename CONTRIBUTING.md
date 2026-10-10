@@ -12,11 +12,17 @@ foundation is not a complete wrapper release. Do not remove the gate until
 the native binaries, safe API and required evidence are complete.
 
 Before product qualification, run real native tests on all supported RIDs,
-ClangSharp regeneration/drift checks, zero-allocation tests, AOT/trimming
+ClangSharp regeneration/drift checks, zero-allocation tests, full-trimming
 publish with zero warnings, package/API validation, independent integrity
 checks, clean-sample package installation, native-relative benchmarks and
 malformed-corpus/fuzz checks. Record actual commands and failed attempts in a
 dated docs report. A narrow pass never establishes a full release pass.
+
+Normal .NET runtime deployment is acceptable for the initial release. NativeAOT
+is optional bounded best-effort work, prioritizing Linux/Docker. Record failed
+or unrun AOT qualification as unqualified; it cannot block otherwise qualified
+implementation or release. IsAotCompatible alone does not establish executed
+NativeAOT support. All other qualification requirements remain unchanged.
 
 Update both public API baselines and XML documentation when changing a public
 member. A breaking public behavior/API change needs a major version and a

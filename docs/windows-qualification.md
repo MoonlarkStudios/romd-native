@@ -48,6 +48,9 @@ Both evidence and generated binding artifacts upload even on failure and
 expire after seven days. Retain reviewed artifacts with the dated gate
 report. Windows receives no signing permissions; Linux provenance jobs
 remain separate. Native manifests and evidence remain `local-unqualified`.
-This command does not establish NativeAOT, full trimming, benchmarks, fuzzing,
-clean package installation or real-disc compatibility. Those checks and the
-whole-gate review remain required before product qualification.
+This command does not establish full trimming, benchmarks, fuzzing, clean
+package installation or real-disc compatibility. Those checks and the whole-gate
+review remain required before product qualification. It also does not establish
+NativeAOT, which is optional bounded best-effort work, prioritizing Linux/Docker.
+Normal .NET deployment is acceptable; failed or unrun AOT evidence remains
+unqualified and does not block otherwise qualified implementation or release.

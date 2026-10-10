@@ -12,6 +12,7 @@ namespace Moonlark.Native.Engineering.Tests.Chdman;
 public sealed class ChdmanLinuxBuildTests
 {
     private const string Source = "/source";
+    private static readonly string LinkSource = Path.GetFullPath(Source);
     private const string Tool = "/output/native/chdman";
     private const string Commit = "f34f02505e32c1993c6a782b6814232cbfc74e36";
     private const string VersionBanner = "chdman - MAME Compressed Hunks of Data (CHD) manager 0.289 (" + Commit + ")";
@@ -129,10 +130,14 @@ public sealed class ChdmanLinuxBuildTests
     [Fact]
     public void GeneratedLinkInputsRequireExactlyTheBundledArchives()
     {
-        Assert.Null(ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs, Source));
-        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("libzlib.a", "libSDL2.a", StringComparison.Ordinal), Source)?.Message, StringComparison.Ordinal);
-        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("../../../../linux_clang/bin/x64/Release/libzlib.a ", "", StringComparison.Ordinal), Source)?.Message, StringComparison.Ordinal);
-        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("libutf8proc.a\n", "libutf8proc.a /usr/lib/libzlib.a\n", StringComparison.Ordinal), Source)?.Message, StringComparison.Ordinal);
+        string externalArchive = Path.Combine(Path.GetPathRoot(LinkSource)!, "usr", "lib", "libzlib.a");
+        Assert.True(Path.IsPathFullyQualified(LinkSource));
+        Assert.True(Path.IsPathFullyQualified(externalArchive));
+        Assert.False(ArtifactsPath.IsWithin(externalArchive, LinkSource));
+        Assert.Null(ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs, LinkSource));
+        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("libzlib.a", "libSDL2.a", StringComparison.Ordinal), LinkSource)?.Message, StringComparison.Ordinal);
+        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("../../../../linux_clang/bin/x64/Release/libzlib.a ", "", StringComparison.Ordinal), LinkSource)?.Message, StringComparison.Ordinal);
+        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs.Replace("libutf8proc.a\n", "libutf8proc.a " + externalArchive + "\n", StringComparison.Ordinal), LinkSource)?.Message, StringComparison.Ordinal);
     }
 
     /// <summary>An inactive debug configuration cannot supply an archive missing from selected release64.</summary>
@@ -141,15 +146,15 @@ public sealed class ChdmanLinuxBuildTests
     {
         const string debug = "ifeq ($(config),debug64)\n  LDDEPS += ../../../../linux_clang/bin/x64/Debug/libzlib.a\nendif\n";
         string incompleteRelease = BundledInputs.Replace("../../../../linux_clang/bin/x64/Release/libzlib.a ", "", StringComparison.Ordinal);
-        Assert.Null(ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs + debug, Source));
-        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(incompleteRelease + debug, Source)?.Message, StringComparison.Ordinal);
+        Assert.Null(ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs + debug, LinkSource));
+        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(incompleteRelease + debug, LinkSource)?.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Dependencies belonging solely to inactive configurations do not alter selected release64 inputs.</summary>
     [Fact]
     public void InactiveConfigurationLibrariesDoNotChangeSelectedReleaseInputs() =>
         Assert.Null(ChdmanBuild.ValidateLinuxLinkInputs(BundledInputs
-            + "ifeq ($(config),debug64)\n  LDDEPS += /usr/lib/libSDL2.a\nendif\n", Source));
+            + "ifeq ($(config),debug64)\n  LDDEPS += /usr/lib/libSDL2.a\nendif\n", LinkSource));
 
     /// <summary>Only the pinned generator's one complete, plain release64 archive addition is accepted.</summary>
     [Theory]
@@ -175,7 +180,7 @@ public sealed class ChdmanLinuxBuildTests
                 .Replace("endif\n", "endef\nendif\n", StringComparison.Ordinal),
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
-        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(makefile, Source)?.Message, StringComparison.Ordinal);
+        Assert.Contains("bundled", ChdmanBuild.ValidateLinuxLinkInputs(makefile, LinkSource)?.Message, StringComparison.Ordinal);
     }
 
     /// <summary>A native ARM executable with an allowed dependency set and exact source banner is accepted.</summary>

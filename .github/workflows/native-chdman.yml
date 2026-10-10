@@ -1,6 +1,11 @@
 name: Chdman source preflight
 on:
   workflow_dispatch:
+    inputs:
+      build_linux_x64:
+        description: Build an unqualified Linux x64 candidate; nothing is published
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -17,3 +22,200 @@ jobs:
       - run: dotnet restore Moonlark.Native.slnx --locked-mode
       - run: dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror
       - run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check
+  linux-x64:
+    needs: source
+    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.build_linux_x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Freeze the clean producer and compile the existing CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(dotnet --version)" = 10.0.302
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          mkdir -p artifacts/chdman-ci/{evidence/container,inputs,context,home,outputs}
+          e=artifacts/chdman-ci/evidence
+          git submodule status --recursive > "$e/submodules.txt"
+          ! grep -qE '^[+U-]' "$e/submodules.txt"
+          git ls-files -z -- . ':(exclude)native/libchdr/upstream' | LC_ALL=C sort -z | xargs -0 sha256sum > "$e/source-before.sha256"
+          git -C native/libchdr/upstream ls-files -z | LC_ALL=C sort -z | (cd native/libchdr/upstream && xargs -0 sha256sum) > "$e/upstream-before.sha256"
+          jq -n --arg source "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg repository "$GITHUB_REPOSITORY" \
+            '{qualification:"local-unqualified",sourceCommit:$source,repository:$repository,runId:$run,runAttempt:$attempt,attestation:null}' > "$e/producer.json"
+          dotnet restore Moonlark.Native.slnx --locked-mode 2>&1 | tee "$e/restore.log"
+          dotnet build Moonlark.Native.slnx -c Release --no-restore -warnaserror 2>&1 | tee "$e/build.log"
+          dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build -- repo check 2>&1 | tee "$e/repo-check.log"
+          cp -a eng/Moonlark.Native.Engineering/bin/Release/net10.0 "$e/engineering-cli"
+          (cd eng/Moonlark.Native.Engineering/bin/Release/net10.0 && sha256sum *) > "$e/cli-before.sha256"
+      - name: Prepare the existing baseline recipe and genuine source inputs
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          p="$GITHUB_WORKSPACE/artifacts/chdman-ci"
+          cp eng/qualification/linux/Dockerfile "$p/context/Dockerfile"
+          cp eng/qualification/linux/linux-x64.rpm.txt "$p/context/packages.txt"
+          cp eng/pins/mame.json "$p/inputs/mame-pin.json"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 600 --output "$p/context/sdk.tar.gz" \
+            https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.302/dotnet-sdk-10.0.302-linux-x64.tar.gz
+          printf '%s  sdk.tar.gz\n' 10069bec8783596484a610332f090d562802a41b9b40e3327a5a5688b572e10c296ae300f940d40461f23c157ed1b0843c2f8e6b3f20d8d8d9d83432d8143bac > "$p/context/sdk.sha512"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 300 --output "$p/context/cmake.tar.gz" \
+            https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-x86_64.tar.gz
+          printf '%s  cmake.tar.gz\n' 0dc2e9a6860f06bf10bd8fadc03e35d9eeb4df46e33763a7e480e987758f385c > "$p/context/cmake.sha256"
+          (cd "$p/context" && sha512sum -c sdk.sha512 && sha256sum -c cmake.sha256)
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 600 --output "$p/inputs/mame.tar.gz" \
+            "$(jq -er .sourceUrl eng/pins/mame.json)"
+          test "$(stat -c %s "$p/inputs/mame.tar.gz")" = "$(jq -er .sourceBytes eng/pins/mame.json)"
+          printf '%s  %s\n' "$(jq -er .sourceSha256 eng/pins/mame.json)" "$p/inputs/mame.tar.gz" | sha256sum -c -
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 300 --output "$p/inputs/SDL2-2.32.10.tar.gz" \
+            https://www.libsdl.org/release/SDL2-2.32.10.tar.gz
+          test "$(stat -c %s "$p/inputs/SDL2-2.32.10.tar.gz")" = 7630262
+          printf '%s  %s\n' 5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165 "$p/inputs/SDL2-2.32.10.tar.gz" | sha256sum -c -
+          mkdir -p "$p/inputs/sdl/include/SDL2"
+          tar xzf "$p/inputs/SDL2-2.32.10.tar.gz" --strip-components=2 -C "$p/inputs/sdl/include/SDL2" --wildcards 'SDL2-2.32.10/include/*.h'
+          tar xOf "$p/inputs/SDL2-2.32.10.tar.gz" SDL2-2.32.10/LICENSE.txt > "$p/inputs/sdl/LICENSE.txt"
+          tar xOf "$p/inputs/mame.tar.gz" mame-mame0289/COPYING > "$p/inputs/MAME-COPYING"
+          test "$(find "$p/inputs/sdl/include/SDL2" -type f -name '*.h' | wc -l)" = 91
+          test -z "$(find "$p/inputs" -type l -print)"
+          find "$p/inputs" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$p/evidence/inputs-before.sha256"
+          cp "$p/context/Dockerfile" "$p/context/packages.txt" "$p/context/sdk.sha512" "$p/context/cmake.sha256" "$p/evidence/"
+          sha256sum "$p/context/Dockerfile" "$p/context/packages.txt" > "$p/evidence/builder-recipe.sha256"
+          docker build --platform linux/amd64 --progress plain --iidfile "$p/evidence/image.id" "$p/context" 2>&1 | tee "$p/evidence/image-build.log"
+          grep -qxE 'sha256:[0-9a-f]{64}' "$p/evidence/image.id"
+          docker image inspect "$(cat "$p/evidence/image.id")" > "$p/evidence/image.json"
+      - name: Build one owned unqualified Linux x64 candidate
+        timeout-minutes: 33
+        shell: bash
+        run: |
+          set -euo pipefail
+          p="$GITHUB_WORKSPACE/artifacts/chdman-ci"
+          e="$p/evidence"
+          image="$(cat "$e/image.id")"
+          token="$(cat /proc/sys/kernel/random/uuid)"
+          name="moonlark-chdman-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$token"
+          cid=''
+          jq -n --arg image "$image" --arg token "$token" --arg name "$name" \
+            '{image:$image,token:$token,name:$name,workSeconds:1800,cleanupSeconds:60}' > "$e/owner.json"
+          owned() {
+            [[ "$cid" =~ ^[0-9a-f]{64}$ ]] || return 1
+            timeout --kill-after=2s 5s docker inspect "$cid" > "$e/$1.json" 2> "$e/$1.stderr" || return 1
+            jq -e --arg cid "$cid" --arg name "/$name" --arg token "$token" --arg image "$image" \
+              'length == 1 and .[0].Id == $cid and .[0].Name == $name and .[0].Image == $image and .[0].Config.Labels["moonlark.chdman.owner"] == $token' "$e/$1.json" > /dev/null || return 1
+          }
+          cleanup() {
+            local failed=0
+            # The attached Docker client is not daemon-side process ownership.
+            if test -z "$cid"; then
+              timeout --kill-after=2s 5s docker inspect "$name" > "$e/create-recovery.json" 2> "$e/create-recovery.stderr" || return 1
+              cid="$(jq -er 'if length == 1 then .[0].Id else error("ambiguous owner") end' "$e/create-recovery.json")" || return 1
+              printf '%s\n' "$cid" > "$e/container.cid" || failed=1
+            fi
+            owned before-cleanup || return 1
+            if jq -e '.[0].State.Running' "$e/before-cleanup.json" > /dev/null; then
+              owned before-stop || return 1
+              timeout --kill-after=2s 15s docker stop --time 10 "$cid" > "$e/stop.stdout" 2> "$e/stop.stderr" || failed=1
+            fi
+            owned before-remove || return 1
+            jq -e '.[0].State.Running == false' "$e/before-remove.json" > /dev/null || return 1
+            timeout --kill-after=2s 5s docker rm "$cid" > "$e/remove.stdout" 2> "$e/remove.stderr" || failed=1
+            local negative=0
+            timeout --kill-after=2s 5s docker inspect "$cid" > "$e/negative.stdout" 2> "$e/negative.stderr" || negative=$?
+            test "$negative" = 1 || return 1
+            jq -e '. == []' "$e/negative.stdout" > /dev/null || return 1
+            grep -Fqi "No such object: $cid" "$e/negative.stderr" || return 1
+            timeout --kill-after=2s 5s docker ps --all --no-trunc --filter "id=$cid" --format '{{.ID}}' > "$e/absent-inventory.stdout" 2> "$e/absent-inventory.stderr" || return 1
+            test ! -s "$e/absent-inventory.stdout" || return 1
+            return "$failed"
+          }
+          finish() {
+            local original=$?
+            trap - EXIT
+            local receipt=0
+            printf '%s\n' "$original" > "$e/original-step-exit.txt" || receipt=$?
+            local cleaned=0
+            cleanup || cleaned=$?
+            printf '%s\n' "$cleaned" > "$e/cleanup-exit.txt" || receipt=$?
+            test "$cleaned" = 0 && test "$receipt" = 0 || exit 1
+            exit "$original"
+          }
+          trap finish EXIT
+          timeout --kill-after=5s 30s docker create --cidfile "$e/container.cid" --name "$name" --label "moonlark.chdman.owner=$token" \
+            --platform linux/amd64 --user "$(id -u):$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 1 --memory 2g --memory-swap 2g --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=134217728 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/repo,readonly" \
+            --mount "type=bind,source=$p/outputs,target=/repo/artifacts/chdman-ci/outputs" \
+            --mount "type=bind,source=$e/container,target=/repo/artifacts/chdman-ci/evidence/container" \
+            --mount "type=bind,source=$p/inputs,target=/inputs,readonly" \
+            --mount "type=bind,source=$p/home,target=/home" \
+            --env HOME=/home --env DOTNET_CLI_HOME=/home --env TMPDIR=/tmp --workdir /repo "$image" bash -c '
+              set -euo pipefail
+              test "$(uname -m)" = x86_64
+              test "$(dotnet --version)" = 10.0.302
+              dotnet --list-runtimes > /repo/artifacts/chdman-ci/evidence/container/container-runtimes.txt
+              grep -qx "Microsoft.NETCore.App 10.0.10 \[/opt/dotnet/shared/Microsoft.NETCore.App\]" /repo/artifacts/chdman-ci/evidence/container/container-runtimes.txt
+              cp /opt/installed-rpms.txt /repo/artifacts/chdman-ci/evidence/container/installed-rpms.txt
+              exec dotnet /repo/eng/Moonlark.Native.Engineering/bin/Release/net10.0/Moonlark.Native.Engineering.dll chdman build \
+                --archive /inputs/mame.tar.gz --output /repo/artifacts/chdman-ci/outputs/chdman \
+                --log /repo/artifacts/chdman-ci/outputs/chdman-build.log --jobs 1 --sdl-include /inputs/sdl/include
+            ' > "$e/create.stdout" 2> "$e/create.stderr"
+          cid="$(cat "$e/container.cid")"
+          owned before-start
+          jq -e --arg owner "$(id -u):$(id -g)" \
+            '.[0].Config.User == $owner and .[0].HostConfig.NetworkMode == "none" and .[0].HostConfig.ReadonlyRootfs == true and .[0].HostConfig.NanoCpus == 1000000000 and .[0].HostConfig.Memory == 2147483648 and .[0].HostConfig.MemorySwap == 2147483648 and .[0].HostConfig.PidsLimit == 128 and .[0].HostConfig.CapDrop == ["ALL"] and (.[0].HostConfig.SecurityOpt | index("no-new-privileges")) != null and (.[0].Mounts | map({Destination,RW}) | sort_by(.Destination)) == [{Destination:"/home",RW:true},{Destination:"/inputs",RW:false},{Destination:"/repo",RW:false},{Destination:"/repo/artifacts/chdman-ci/evidence/container",RW:true},{Destination:"/repo/artifacts/chdman-ci/outputs",RW:true}]' "$e/before-start.json" > /dev/null
+          attached=0
+          timeout --signal=TERM --kill-after=15s 1800s docker start --attach "$cid" > "$e/native.stdout" 2> "$e/native.stderr" || attached=$?
+          printf '%s\n' "$attached" > "$e/attached-exit.txt"
+          test "$attached" = 0
+          timeout --kill-after=2s 5s docker wait "$cid" > "$e/wait.stdout" 2> "$e/wait.stderr"
+          test "$(cat "$e/wait.stdout")" = 0
+          owned terminal
+          jq -e '.[0].State.Running == false and .[0].State.ExitCode == 0 and .[0].State.OOMKilled == false' "$e/terminal.json" > /dev/null
+      - name: Bind the actual binary receipt to unchanged inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          p="$GITHUB_WORKSPACE/artifacts/chdman-ci"
+          e="$p/evidence"
+          m="$p/outputs/chdman/build-manifest.json"
+          b="$p/outputs/chdman/native/chdman"
+          test -f "$m" && test ! -L "$m" && test -f "$b" && test ! -L "$b"
+          jq -e --slurpfile pin eng/pins/mame.json \
+            '.schemaVersion == 1 and .qualification == "local-unqualified" and has("attestation") and .attestation == null and .rid == "linux-x64" and .pin == $pin[0] and .platform.architecture == "Advanced Micro Devices X86-64" and .platform.interpreter == "/lib64/ld-linux-x86-64.so.2" and .platform.stripped == true and .platform.glibcBaseline == "2.31" and .version == ("chdman - MAME Compressed Hunks of Data (CHD) manager " + $pin[0].version + " (" + $pin[0].commit + ")") and .sdlHeaders != null' "$m" > /dev/null
+          test "$(stat -c %s "$b")" = "$(jq -er .binary.bytes "$m")"
+          printf '%s  %s\n' "$(jq -er .binary.sha256 "$m")" "$b" | sha256sum -c -
+          git ls-files -z -- . ':(exclude)native/libchdr/upstream' | LC_ALL=C sort -z | xargs -0 sha256sum > "$e/source-after.sha256"
+          git -C native/libchdr/upstream ls-files -z | LC_ALL=C sort -z | (cd native/libchdr/upstream && xargs -0 sha256sum) > "$e/upstream-after.sha256"
+          (cd eng/Moonlark.Native.Engineering/bin/Release/net10.0 && sha256sum *) > "$e/cli-after.sha256"
+          find "$p/inputs" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$e/inputs-after.sha256"
+          cmp "$e/source-before.sha256" "$e/source-after.sha256"
+          cmp "$e/upstream-before.sha256" "$e/upstream-after.sha256"
+          cmp "$e/cli-before.sha256" "$e/cli-after.sha256"
+          cmp "$e/inputs-before.sha256" "$e/inputs-after.sha256"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          sha256sum "$b" "$m" "$p/outputs/chdman/source-inputs.json" > "$e/subjects.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: chdman-linux-x64-unqualified-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/chdman-ci/evidence
+            artifacts/chdman-ci/inputs
+            artifacts/chdman-ci/outputs/chdman-build.log
+            artifacts/chdman-ci/outputs/chdman/native
+            artifacts/chdman-ci/outputs/chdman/build-manifest.json
+            artifacts/chdman-ci/outputs/chdman/source-inputs.json
+            artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/chdman.link.map
+            artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/projects/sdl/mame/gmake-linux-clang/*.make
+            artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/projects/sdl/mame/gmake-linux-clang/Makefile
+          if-no-files-found: error
+          retention-days: 7

@@ -23,6 +23,23 @@ public sealed class LinuxWorkflowTests
         Assert.Contains("qualification container --rid linux-x64", text, StringComparison.Ordinal);
         Assert.Contains("qualification container --rid linux-arm64", text, StringComparison.Ordinal);
         Assert.Contains("qualification fixtures", text, StringComparison.Ordinal);
+        Assert.Contains("      candidate_feed:\n        description: Build an unpublished combined Linux candidate feed after qualification\n        type: boolean\n        default: false\n", text, StringComparison.Ordinal);
+        string candidate = text.Split("  package-linux-candidate:\n", StringSplitOptions.None)[1]
+            .Split("  prepare-linux-subjects:\n", StringSplitOptions.None)[0];
+        Assert.StartsWith("    needs: [linux-x64, linux-arm64]\n"
+            + "    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.candidate_feed\n", candidate, StringComparison.Ordinal);
+        Assert.Contains("    permissions:\n      contents: read\n", candidate, StringComparison.Ordinal);
+        Assert.DoesNotContain(": write", candidate, StringComparison.Ordinal);
+        foreach (string rid in new[] { "linux-x64", "linux-arm64" })
+            Assert.Contains("          name: libchdr-" + rid + "-evidence\n          path: artifacts/signing/" + rid + "\n", candidate, StringComparison.Ordinal);
+        Assert.Contains("          EXPECTED_COMMIT: ${{ github.sha }}\n", candidate, StringComparison.Ordinal);
+        const string subjects = "qualification subjects --source-commit \"$EXPECTED_COMMIT\"";
+        const string package = "package candidate --rids linux-x64,linux-arm64 --output \"$CANDIDATE_DIRECTORY\"";
+        Assert.True(candidate.Contains(subjects, StringComparison.Ordinal));
+        Assert.True(candidate.IndexOf(package, StringComparison.Ordinal) > candidate.IndexOf(subjects, StringComparison.Ordinal));
+        Assert.Contains("          CANDIDATE_DIRECTORY: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}\n", candidate, StringComparison.Ordinal);
+        Assert.Contains("          name: libchdr-linux-candidate-${{ github.run_id }}-${{ github.run_attempt }}\n", candidate, StringComparison.Ordinal);
+        Assert.Contains("          path: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}\n          if-no-files-found: error\n          include-hidden-files: true\n          retention-days: 7\n", candidate, StringComparison.Ordinal);
         Assert.Null(RepositoryCheck.Run(TestRepository.Root, null));
     }
 
@@ -56,6 +73,14 @@ public sealed class LinuxWorkflowTests
     [InlineData("          name: libchdr-synthetic-fixtures", "          name: unrelated-fixtures")]
     [InlineData("          retention-days: 7", "          retention-days: 90")]
     [InlineData("        if: always()", "        if: false")]
+    [InlineData("      candidate_feed:\n        description: Build an unpublished combined Linux candidate feed after qualification\n        type: boolean\n        default: false\n", "      candidate_feed:\n        description: Build an unpublished combined Linux candidate feed after qualification\n        type: boolean\n        default: true\n")]
+    [InlineData(" && inputs.candidate_feed", "")]
+    [InlineData("github.event_name == 'workflow_dispatch' && inputs.candidate_feed", "github.event_name == 'push' && inputs.candidate_feed")]
+    [InlineData("  package-linux-candidate:\n    needs: [linux-x64, linux-arm64]\n", "  package-linux-candidate:\n    needs: [linux-x64]\n")]
+    [InlineData("--no-build --no-restore -- qualification subjects --source-commit \"$EXPECTED_COMMIT\"", "--no-build --no-restore -- qualification subjects")]
+    [InlineData("package candidate --rids linux-x64,linux-arm64 --output", "package candidate --rids linux-x64 --output")]
+    [InlineData("CANDIDATE_DIRECTORY: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}", "CANDIDATE_DIRECTORY: artifacts/packages/ci-linux")]
+    [InlineData("          include-hidden-files: true\n", "          include-hidden-files: false\n")]
     public void LinuxContractChangesFailClosed(string before, string after)
     {
         using var copy = new TemporaryDirectory();

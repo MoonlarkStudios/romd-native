@@ -30,6 +30,7 @@ public sealed class LinuxWorkflowTests
             + "    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.candidate_feed\n", candidate, StringComparison.Ordinal);
         Assert.Contains("    permissions:\n      contents: read\n", candidate, StringComparison.Ordinal);
         Assert.DoesNotContain(": write", candidate, StringComparison.Ordinal);
+        Assert.Contains("    env:\n      CI: \"true\"\n    steps:\n      - name: Set runner-local NuGet cache paths\n        shell: bash\n        run: |\n          printf 'NUGET_PACKAGES=%s/libchdr-candidate/packages\\n' \"$RUNNER_TEMP\" >> \"$GITHUB_ENV\"\n          printf 'NUGET_HTTP_CACHE_PATH=%s/libchdr-candidate/http-cache\\n' \"$RUNNER_TEMP\" >> \"$GITHUB_ENV\"\n", candidate, StringComparison.Ordinal);
         foreach (string rid in new[] { "linux-x64", "linux-arm64" })
             Assert.Contains("          name: libchdr-" + rid + "-evidence\n          path: artifacts/signing/" + rid + "\n", candidate, StringComparison.Ordinal);
         Assert.Contains("          EXPECTED_COMMIT: ${{ github.sha }}\n", candidate, StringComparison.Ordinal);
@@ -81,6 +82,7 @@ public sealed class LinuxWorkflowTests
     [InlineData("package candidate --rids linux-x64,linux-arm64 --output", "package candidate --rids linux-x64 --output")]
     [InlineData("CANDIDATE_DIRECTORY: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}", "CANDIDATE_DIRECTORY: artifacts/packages/ci-linux")]
     [InlineData("          include-hidden-files: true\n", "          include-hidden-files: false\n")]
+    [InlineData("    env:\n      CI: \"true\"\n    steps:\n      - name: Set runner-local NuGet cache paths\n", "    env:\n      CI: \"true\"\n      NUGET_PACKAGES: ${{ runner.temp }}/libchdr-candidate/packages\n      NUGET_HTTP_CACHE_PATH: ${{ runner.temp }}/libchdr-candidate/http-cache\n    steps:\n      - name: Set runner-local NuGet cache paths\n")]
     public void LinuxContractChangesFailClosed(string before, string after)
     {
         using var copy = new TemporaryDirectory();

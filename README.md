@@ -1,5 +1,11 @@
 # Moonlark Native
 
+> **Archived: development moved into [ROMD](https://github.com/JackSkylark/romd) on 2026-10-12.**
+> ROMD imported this repository with its history at `e036060` (branch
+> `codex/chd-native-release-qualification`). `Moonlark.Libchdr` now lives at `src/Moonlark.Libchdr`
+> (still MIT, same name and namespace), the libchdr and chdman builds under `native/`, and the
+> engineering tooling at `tools/Moonlark.Native.Engineering`. Nothing further lands here.
+
 Safe .NET wrappers and pinned native tools for emulation media. Each library
 has its own wrapper family; consumers depend on that family alone. The first
 family is `Moonlark.Libchdr`, over upstream libchdr. Pinned chdman is a tool

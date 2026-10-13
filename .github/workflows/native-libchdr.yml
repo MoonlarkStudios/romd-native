@@ -6,6 +6,10 @@ on:
         description: Run the full native-relative benchmark matrix
         type: boolean
         default: false
+      candidate_feed:
+        description: Build an unpublished combined Linux candidate feed after qualification
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main, refactor/csharp-engineering]
@@ -223,6 +227,63 @@ jobs:
         with:
           name: libchdr-win-x64-generation
           path: artifacts/generation/libchdr
+          retention-days: 7
+  package-linux-candidate:
+    needs: [linux-x64, linux-arm64]
+    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.candidate_feed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - name: Set runner-local NuGet cache paths
+        shell: bash
+        run: |
+          printf 'NUGET_PACKAGES=%s/libchdr-candidate/packages\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'NUGET_HTTP_CACHE_PATH=%s/libchdr-candidate/http-cache\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-linux-x64-evidence
+          path: artifacts/signing/linux-x64
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: libchdr-linux-arm64-evidence
+          path: artifacts/signing/linux-arm64
+      - run: dotnet restore Moonlark.Native.slnx --locked-mode
+      - run: dotnet build eng/Moonlark.Native.Engineering -c Release --no-restore -warnaserror
+      - name: Validate both Linux qualification subjects against this source
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build --no-restore -- qualification subjects --source-commit "$EXPECTED_COMMIT"
+      - name: Assemble both Linux inputs and create one local-unqualified candidate
+        env:
+          CANDIDATE_DIRECTORY: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          for rid in linux-x64 linux-arm64; do
+            source="artifacts/signing/$rid/checkout/artifacts/native/libchdr/$rid"
+            destination="artifacts/native/libchdr/$rid"
+            mkdir -p "$destination/native"
+            cp "$source/build-manifest.json" "$destination/build-manifest.json"
+            cp "$source/native/libmoonlark_chdr.so" "$destination/native/libmoonlark_chdr.so"
+          done
+          dotnet run --project eng/Moonlark.Native.Engineering -c Release --no-build --no-restore -- package candidate --rids linux-x64,linux-arm64 --output "$CANDIDATE_DIRECTORY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libchdr-linux-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/packages/ci-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
   prepare-linux-subjects:
     needs: [linux-x64, linux-arm64]

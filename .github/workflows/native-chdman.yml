@@ -46,6 +46,12 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir -p artifacts/chdman-ci/{evidence/container,inputs,context,home,outputs}
           e=artifacts/chdman-ci/evidence
+          test -f native/chdman/notices/THIRD_PARTY_NOTICES.md && test ! -L native/chdman/notices/THIRD_PARTY_NOTICES.md
+          test -f native/chdman/notices/runtime/SOURCE_REFERENCES.md && test ! -L native/chdman/notices/runtime/SOURCE_REFERENCES.md
+          test "$(wc -c < native/chdman/notices/THIRD_PARTY_NOTICES.md)" -eq 8137
+          test "$(wc -c < native/chdman/notices/runtime/SOURCE_REFERENCES.md)" -eq 7150
+          printf '%s\n' 'e42f96e518fea26f0c723035c18bcb95f9d32bcd71ed22c087c5095f9ff48b97  native/chdman/notices/THIRD_PARTY_NOTICES.md' 'c119ce7e91505973acf3b080d47509e6ae17260f30989e0cc835b2ae11d3c8b1  native/chdman/notices/runtime/SOURCE_REFERENCES.md' > "$e/notice-inputs.sha256"
+          sha256sum --strict --check "$e/notice-inputs.sha256" > "$e/notice-input-check.stdout"
           git submodule status --recursive > "$e/submodules.txt"
           ! grep -qE '^[+U-]' "$e/submodules.txt"
           git ls-files -z -- . ':(exclude)native/libchdr/upstream' | LC_ALL=C sort -z | xargs -0 sha256sum > "$e/source-before.sha256"
@@ -180,6 +186,72 @@ jobs:
           test "$(cat "$e/wait.stdout")" = 0
           owned terminal
           jq -e '.[0].State.Running == false and .[0].State.ExitCode == 0 and .[0].State.OOMKilled == false' "$e/terminal.json" > /dev/null
+          grep -qx 'gcc-toolset-15-gcc-0:15.2.1-7.1.el8_10.x86_64' "$e/container/installed-rpms.txt"
+          grep -qx 'glibc-0:2.28-251.el8_10.40.x86_64' "$e/container/installed-rpms.txt"
+          mkdir -p "$p/outputs/runtime-notices/runtime/gcc-toolset-15" "$p/outputs/runtime-notices/runtime/glibc-builder-2.28"
+          timeout --kill-after=2s 5s docker cp "$cid:/opt/rh/gcc-toolset-15/root/usr/share/doc/gcc-toolset-15-gcc/COPYING" "$p/outputs/runtime-notices/runtime/gcc-toolset-15/COPYING" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/opt/rh/gcc-toolset-15/root/usr/share/doc/gcc-toolset-15-gcc/COPYING.LIB" "$p/outputs/runtime-notices/runtime/gcc-toolset-15/COPYING.LIB" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/opt/rh/gcc-toolset-15/root/usr/share/doc/gcc-toolset-15-gcc/COPYING.RUNTIME" "$p/outputs/runtime-notices/runtime/gcc-toolset-15/COPYING.RUNTIME" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/opt/rh/gcc-toolset-15/root/usr/share/doc/gcc-toolset-15-gcc/COPYING3" "$p/outputs/runtime-notices/runtime/gcc-toolset-15/COPYING3" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/opt/rh/gcc-toolset-15/root/usr/share/doc/gcc-toolset-15-gcc/COPYING3.LIB" "$p/outputs/runtime-notices/runtime/gcc-toolset-15/COPYING3.LIB" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/usr/share/licenses/glibc/COPYING" "$p/outputs/runtime-notices/runtime/glibc-builder-2.28/COPYING" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/usr/share/licenses/glibc/COPYING.LIB" "$p/outputs/runtime-notices/runtime/glibc-builder-2.28/COPYING.LIB" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+          timeout --kill-after=2s 5s docker cp "$cid:/usr/share/licenses/glibc/LICENSES" "$p/outputs/runtime-notices/runtime/glibc-builder-2.28/LICENSES" >> "$e/runtime-notice-copy.stdout" 2>> "$e/runtime-notice-copy.stderr"
+      - name: Preserve the finite tool notice bundle and complete original source evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib, json, stat
+          from pathlib import Path
+          root = Path('artifacts/chdman-ci').resolve()
+          target = root / 'outputs/chdman/notices'
+          target.mkdir(exist_ok=False)
+          rows = [{'file': 'SDL2-LICENSE.txt', 'bytes': 884, 'sha256': '97f35b302b361680ec1e891e95d2d52097bb95abff361434916d99dc1305f127'}, {'file': 'THIRD_PARTY_NOTICES.md', 'bytes': 8137, 'sha256': 'e42f96e518fea26f0c723035c18bcb95f9d32bcd71ed22c087c5095f9ff48b97'}, {'file': 'mame-mame0289/3rdparty/expat/COPYING', 'bytes': 1144, 'sha256': '31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87'}, {'file': 'mame-mame0289/3rdparty/flac/COPYING.FDL', 'bytes': 20403, 'sha256': 'f45cc81b400a048b56c9edbd4c3317f7a8958463dfd55aa96f268ecfd6baa12c'}, {'file': 'mame-mame0289/3rdparty/flac/COPYING.GPL', 'bytes': 18092, 'sha256': '8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643'}, {'file': 'mame-mame0289/3rdparty/flac/COPYING.LGPL', 'bytes': 26436, 'sha256': '5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a'}, {'file': 'mame-mame0289/3rdparty/flac/COPYING.Xiph', 'bytes': 1509, 'sha256': '12600ea1a7affcbf469bd0d8b2cd725e4167114a2ee834b88f5d2857bfd7ddbf'}, {'file': 'mame-mame0289/3rdparty/lzma/DOC/7zC.txt', 'bytes': 5335, 'sha256': 'da5f94fe41c10526b81582373182d17c5b2857398a002da2e3932ea10a04071d'}, {'file': 'mame-mame0289/3rdparty/utf8proc/LICENSE.md', 'bytes': 5125, 'sha256': '3b510150d34f248a221bb88e1d811238d6c6c18b51231822c42974c39bb07256'}, {'file': 'mame-mame0289/3rdparty/zlib/LICENSE', 'bytes': 1002, 'sha256': 'e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2'}, {'file': 'mame-mame0289/3rdparty/zstd/COPYING', 'bytes': 18091, 'sha256': 'f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505'}, {'file': 'mame-mame0289/3rdparty/zstd/LICENSE', 'bytes': 1549, 'sha256': '7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8'}, {'file': 'mame-mame0289/COPYING', 'bytes': 11549, 'sha256': '60e9b2e1e0832d74696a9a0317693bb6cbe317747caad589a338e2c7636933e4'}, {'file': 'mame-mame0289/docs/legal/BSD-2-Clause', 'bytes': 1283, 'sha256': '32bef3825a21972c113e32b123fad97ae146ffc32c1b22ab5e7c06c35a692f1c'}, {'file': 'mame-mame0289/docs/legal/BSD-3-Clause', 'bytes': 1481, 'sha256': 'a27554938d3dd6569931e5e18b93214a57f47bc1bb8b75fc32fdd18abe042a07'}, {'file': 'mame-mame0289/docs/legal/BSL-1.0', 'bytes': 1281, 'sha256': '3602a15699004c836ba75fd667207389b20795e933436b761cdd97fba3eb00d6'}, {'file': 'mame-mame0289/docs/legal/CC0', 'bytes': 6648, 'sha256': '7097c533bb812bce9e9ad17b919dcab3f66f9c1aecf5a16291f3d0468a217ad0'}, {'file': 'mame-mame0289/docs/legal/GPL-2.0', 'bytes': 17958, 'sha256': 'ba20c40872287b52eeca54d48e875879b33d841b98f8cedba3558b405467d5de'}, {'file': 'mame-mame0289/docs/legal/LGPL-2.1', 'bytes': 26433, 'sha256': '04dec8d7181eefc5a8d239bb459c2e0625c2d1153d85f305e8596d6e874c42e2'}, {'file': 'mame-mame0289/docs/legal/MIT', 'bytes': 1060, 'sha256': '1e718db2273870673b631bfcbf1712746c7495b0e3991df1c86ab0025a03becb'}, {'file': 'mame-mame0289/docs/legal/Zlib', 'bytes': 899, 'sha256': '7490df3d98428f2672e17ced7b19559b9909c002e4d2362eb23ec263685fe2f0'}, {'file': 'runtime/SOURCE_REFERENCES.md', 'bytes': 7150, 'sha256': 'c119ce7e91505973acf3b080d47509e6ae17260f30989e0cc835b2ae11d3c8b1'}, {'file': 'runtime/gcc-toolset-15/COPYING', 'bytes': 18002, 'sha256': '231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c'}, {'file': 'runtime/gcc-toolset-15/COPYING.LIB', 'bytes': 26440, 'sha256': '32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b'}, {'file': 'runtime/gcc-toolset-15/COPYING.RUNTIME', 'bytes': 3324, 'sha256': '9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74'}, {'file': 'runtime/gcc-toolset-15/COPYING3', 'bytes': 35147, 'sha256': '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903'}, {'file': 'runtime/gcc-toolset-15/COPYING3.LIB', 'bytes': 7639, 'sha256': 'a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c'}, {'file': 'runtime/glibc-builder-2.28/COPYING', 'bytes': 18092, 'sha256': '8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643'}, {'file': 'runtime/glibc-builder-2.28/COPYING.LIB', 'bytes': 26530, 'sha256': 'dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551'}, {'file': 'runtime/glibc-builder-2.28/LICENSES', 'bytes': 18941, 'sha256': '35bdb41dc0bcb10702ddacbd51ec4c0fe6fb3129f734e8c85fc02e4d3eb0ce3f'}]
+          if len(rows) != 30 or len({row['file'] for row in rows}) != 30:
+              raise ValueError('finite notice inventory changed')
+          evidence = []
+          for row in rows:
+              name = row['file']
+              if name.startswith('mame-mame0289/'):
+                  source = root / 'outputs/chdman/source' / name
+              elif name == 'SDL2-LICENSE.txt':
+                  source = root / 'inputs/sdl/LICENSE.txt'
+              elif name in ('THIRD_PARTY_NOTICES.md','runtime/SOURCE_REFERENCES.md'):
+                  # Historical text source gaps do not become closed by packaging.
+                  source = Path('native/chdman/notices').resolve(strict=True) / name
+              else:
+                  source = root / 'outputs/runtime-notices' / name
+              if source.resolve(strict=True) != source or not stat.S_ISREG(source.lstat().st_mode):
+                  raise ValueError('notice source is not an original regular file')
+              body = source.read_bytes()
+              if len(body) != row['bytes'] or hashlib.sha256(body).hexdigest() != row['sha256']:
+                  raise ValueError('notice source identity mismatch: ' + name)
+              output = target / name
+              output.parent.mkdir(parents=True,exist_ok=True)
+              with output.open('xb') as destination:
+                  destination.write(body)
+              if output.read_bytes() != body:
+                  raise ValueError('notice copy changed')
+              evidence.append(dict(row,sourcePath=str(source)))
+          if {str(path.relative_to(target)) for path in target.rglob('*') if path.is_file()} != {row['file'] for row in rows}:
+              raise ValueError('incomplete or extra staged notices')
+          archive = root / 'inputs/mame.tar.gz'
+          h, count = hashlib.sha256(), 0
+          with archive.open('rb') as source:
+              while block := source.read(1 << 20):
+                  h.update(block)
+                  count += len(block)
+          if count != 213237316 or h.hexdigest() != '0929cc749afabcef892900e10dd90bd8b05f94a7dde8f367ac6a5d2082589f84':
+              raise ValueError('complete original MAME corresponding source changed')
+          (root / 'evidence/notices.json').write_text(json.dumps({
+              'qualification':'local-unqualified','notices':evidence,
+              'sourceCommit':json.loads((root/'evidence/producer.json').read_bytes())['sourceCommit'],
+              'mameSource':{'file':'inputs/mame.tar.gz','bytes':count,'sha256':h.hexdigest()},
+              'historicalNoticeTextsRetained':True,'fullCorrespondingGccGlibcSourcePresent':False,
+              'scope':'Finite legal texts plus complete original MAME archive/build provenance retained. No public source delivery, exception applicability, final-image runtime closure or G3 qualification claim.'},indent=2)+'\n')
+          PYTHON
+
       - name: Bind the actual binary receipt to unchanged inputs
         shell: bash
         run: |
@@ -214,6 +286,7 @@ jobs:
             artifacts/chdman-ci/outputs/chdman/native
             artifacts/chdman-ci/outputs/chdman/build-manifest.json
             artifacts/chdman-ci/outputs/chdman/source-inputs.json
+            artifacts/chdman-ci/outputs/chdman/notices
             artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/chdman.link.map
             artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/projects/sdl/mame/gmake-linux-clang/*.make
             artifacts/chdman-ci/outputs/chdman/source/mame-mame0289/build/projects/sdl/mame/gmake-linux-clang/Makefile

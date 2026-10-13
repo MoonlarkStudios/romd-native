@@ -215,6 +215,8 @@ public sealed class RepositoryCheckTests
         Assert.Contains("    needs: source\n    if: github.repository == 'MoonlarkStudios/romd-native' && github.event_name == 'workflow_dispatch' && inputs.build_linux_x64\n", text, StringComparison.Ordinal);
         Assert.Contains("--jobs 1 --sdl-include /inputs/sdl/include", text, StringComparison.Ordinal);
         Assert.Contains("          name: chdman-linux-x64-unqualified-${{ github.run_id }}-${{ github.run_attempt }}", text, StringComparison.Ordinal);
+        Assert.Contains("            artifacts/chdman-ci/outputs/chdman/notices\n", text, StringComparison.Ordinal);
+        Assert.Contains("fullCorrespondingGccGlibcSourcePresent':False", text, StringComparison.Ordinal);
         Assert.DoesNotContain("  pull_request:", text, StringComparison.Ordinal);
         Assert.DoesNotContain("  push:", text, StringComparison.Ordinal);
         Assert.DoesNotContain("attest-build-provenance", text, StringComparison.Ordinal);
@@ -240,6 +242,8 @@ public sealed class RepositoryCheckTests
     [InlineData("docker rm \"$cid\"", "docker rm --force \"$cid\"")]
     [InlineData("--mount \"type=bind,source=$p/outputs,target=/repo/artifacts/chdman-ci/outputs\"", "--mount \"type=bind,source=$GITHUB_WORKSPACE/artifacts,target=/repo/artifacts\"")]
     [InlineData(" || receipt=$?", "")]
+    [InlineData("            artifacts/chdman-ci/outputs/chdman/notices\n", "")]
+    [InlineData("e42f96e518fea26f0c723035c18bcb95f9d32bcd71ed22c087c5095f9ff48b97", "142f96e518fea26f0c723035c18bcb95f9d32bcd71ed22c087c5095f9ff48b97")]
     public void ChdmanCandidateDriftRequiresReview(string original, string replacement)
     {
         using var directory = Copy();
